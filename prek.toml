@@ -1,0 +1,159 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+
+default_language_version = { python = "python3.11" }
+
+# TODO: worgarside/pre-commit-hooks-dependency-sync only understands
+# .pre-commit-config.yaml today, not prek.toml - it will fail here until
+# that's fixed upstream. Disabled for now, not removed, as a reminder.
+# [[repos]]
+# repo = "https://github.com/worgarside/pre-commit-hooks-dependency-sync"
+# rev = "1.5.1"
+# hooks = [
+#   { id = "sync-additional-dependencies" }
+# ]
+
+[[repos]]
+repo = "https://github.com/compilerla/conventional-pre-commit"
+rev = "v4.4.0"
+hooks = [
+  {
+    id = "conventional-pre-commit",
+    stages = ["commit-msg"]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/astral-sh/ruff-pre-commit"
+rev = "v0.15.22"
+hooks = [
+  { id = "ruff-format" },
+  {
+    id = "ruff-check",
+    language_version = "python3.11"
+  }
+]
+
+[[repos]]
+repo = "https://github.com/pre-commit/mirrors-mypy"
+rev = "v2.3.0"
+hooks = [
+  {
+    id = "mypy",
+    args = [
+      "--strict",
+      "--show-error-codes"
+    ],
+    additional_dependencies = [
+      "httpx==0.28.1",
+      "numpy==2.0.1",
+      "paho-mqtt==2.1.0",
+      "pytest==9.0.2",
+      "pytest-codspeed==3.1.0",
+      "types-Pillow",
+      "wg-utilities==5.17.4",
+      "rgbmatrixemulator==0.13.3",
+      "types-pyaudio==0.2.16.20240516",
+      "scipy-stubs==1.14.1.5"
+    ]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/astral-sh/uv-pre-commit"
+rev = "0.12.3"
+hooks = [
+  { id = "uv-lock" },
+  {
+    id = "uv-export",
+    args = [
+      "--frozen",
+      "--output-file=requirements.txt",
+      "--quiet"
+    ]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v6.0.0"
+hooks = [
+  { id = "check-case-conflict" },
+  { id = "end-of-file-fixer" },
+  { id = "mixed-line-ending" },
+  {
+    id = "pretty-format-json",
+    args = [
+      "--no-sort-keys",
+      "--autofix",
+      "--indent",
+      "2"
+    ]
+  },
+  { id = "trailing-whitespace" }
+]
+
+[[repos]]
+repo = "https://github.com/jumanjihouse/pre-commit-hook-yamlfmt"
+rev = "0.2.3"
+hooks = [
+  {
+    id = "yamlfmt",
+    args = [
+      "--mapping",
+      "2",
+      "--sequence",
+      "4",
+      "--offset",
+      "2",
+      "--width",
+      "4096"
+    ]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/adrienverge/yamllint.git"
+rev = "v1.38.0"
+hooks = [
+  {
+    id = "yamllint",
+    args = [
+      "--format",
+      "parsable",
+      "--strict"
+    ]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/pre-commit/pygrep-hooks"
+rev = "v1.10.0"
+hooks = [
+  { id = "python-check-blanket-type-ignore" }
+]
+
+[[repos]]
+repo = "https://github.com/codespell-project/codespell"
+rev = "v2.4.3"
+hooks = [
+  {
+    id = "codespell",
+    additional_dependencies = ["tomli==2.0.1"]
+  }
+]
+
+[[repos]]
+repo = "https://github.com/jendrikseipp/vulture"
+rev = "v2.16"
+hooks = [
+  { id = "vulture" }
+]
+
+[[repos]]
+repo = "https://github.com/fredrikaverpil/creosote"
+rev = "v5.2.0"
+hooks = [
+  { id = "creosote" }
+]
