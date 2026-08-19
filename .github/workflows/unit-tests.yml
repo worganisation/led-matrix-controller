@@ -24,7 +24,7 @@ permissions:
 jobs:
   unit-tests:
     name: Unit Tests
-    uses: worgarside/github-config-files/.github/workflows/__unit-tests.yml@0.5.3
+    uses: worgarside/github-config-files/.github/workflows/__unit-tests.yml@0.5.4
     with:
       python-version: '3.11'
       source-dir: 'led_matrix_controller'
