@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - .github/repo_labels.yml
-      - .github/workflows/manage_repo_labels.yml
+      - .github/workflows/manage-repo-labels.yml
   workflow_dispatch:
 
 jobs:
