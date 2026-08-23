@@ -23,7 +23,7 @@ dev = [
   "mypy>=2.3.0,<2.4.0",
   "rgbmatrixemulator>=0.13.3,<0.14.0",
   "scipy-stubs>=1.14.1.5,<1.15.0",
-  "types-pillow>=10.2.0.20240520",
+  "types-pillow>=10.2.0.20240520,<11.0.0.0",
   "types-pyaudio>=0.2.16.20240516,<0.3.0",
 ]
 test = [

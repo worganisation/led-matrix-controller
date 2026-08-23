@@ -13,7 +13,6 @@ clean:
 	cd rpi-rgb-led-matrix && git reset --hard && git clean -fd
 
 create:
-	virtualenv -p 3.11 .venv
 	$(MAKE) install-all
 
 	sudo mkdir -p /var/cache/led-matrix-controller
