@@ -1,6 +1,6 @@
 [project]
 name = "led-matrix-controller"
-version = "1.11.1"
+version = "1.11.2"
 description = "Updates an RGB LED matrix with payloads from an MQTT topic"
 authors = [{ name = "Will Garside", email = "worgarside@gmail.com" }]
 license = "MIT"
