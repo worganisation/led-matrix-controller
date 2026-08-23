@@ -64,6 +64,7 @@ class MqttClient(metaclass=Singleton):
         self._client.on_subscribe = self._on_subscribe
 
         self._retain = retain
+        self._topics: set[str] = set()
 
         if connect and not self._client.is_connected():
             LOGGER.debug(
@@ -83,9 +84,18 @@ class MqttClient(metaclass=Singleton):
         rc: ReasonCode,
         properties: Properties | None,
     ) -> None:
-        _ = client, userdata, flags, properties
+        _ = userdata, flags, properties
         LOGGER.info("Connected with result code: %s", rc)
         self._connection_failures = 0
+
+        # A broker restart clears its in-memory subscription state. Keep track of
+        # callbacks registered by this process and restore their subscriptions on
+        # every successful connection.
+        for topic in self._topics:
+            client.subscribe(topic)
+
+        if self._topics:
+            LOGGER.info("Restored %d MQTT subscriptions", len(self._topics))
 
     def _on_connect_fail(
         self,
@@ -159,6 +169,7 @@ class MqttClient(metaclass=Singleton):
 
             callback(payload)
 
+        self._topics.add(topic)
         self._client.subscribe(topic)
         self._client.message_callback_add(topic, _cb)
 
