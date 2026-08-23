@@ -19,6 +19,8 @@ dependencies = [
 ]
 
 [tool.semantic_release]
+tag_format = "{version}"
+version_toml = ["pyproject.toml:project.version"]
 build_command = """
     python -m pip install uv
     uv lock --upgrade-package "$PACKAGE_NAME"
