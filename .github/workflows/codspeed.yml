@@ -48,7 +48,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .venv
-          key: 'venv-${{ hashFiles(env.CACHE_FILE) }}'
+          key: venv-${{ hashFiles(env.CACHE_FILE) }}
 
       - name: Install Dependencies
         run: poetry install --sync
@@ -56,5 +56,5 @@ jobs:
       - name: Run Benchmarks
         uses: CodSpeedHQ/action@4296e51e7041e24dadb86d1d6e8b9320d223dbe8 # v5.0.3
         with:
-          token: '${{ secrets.CODSPEED_TOKEN }}'
+          token: ${{ secrets.CODSPEED_TOKEN }}
           run: poetry run pytest --codspeed -v
