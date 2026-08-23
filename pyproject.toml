@@ -1,33 +1,40 @@
-[tool.poetry]
+[project]
 name = "led-matrix-controller"
 version = "1.11.1"
 description = "Updates an RGB LED matrix with payloads from an MQTT topic"
-authors = ["Will Garside <worgarside@gmail.com>"]
+authors = [{ name = "Will Garside", email = "worgarside@gmail.com" }]
 license = "MIT"
 readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "httpcore>=1.0.7,<2.0.0",
+  "httpx>=0.28.1,<0.29.0",
+  "numpy==2.0.1",
+  "paho-mqtt>=2.1.0,<3.0.0",
+  "pillow>=11.2.1,<12.0.0",
+  "pyaudio>=0.2.14,<0.3.0",
+  "scipy>=1.16.0,<2.0.0",
+  "typing-extensions>=4.12.2,<5.0.0",
+  "wg-utilities[exceptions]>=5.17.4,<6.0.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.12"
-pillow = "^11.2.1"
-wg-utilities = { extras = ["exceptions"], version = "^5.17.4" }
-paho-mqtt = "^2.1.0"
-numpy = "2.0.1"
-httpx = "^0.28.1"
-typing-extensions = "^4.12.2"
-pyaudio = "^0.2.14"
-scipy = "^1.16.0"
-httpcore = "^1.0.7"
+[dependency-groups]
+dev = [
+  "mypy>=2.3.0,<2.4.0",
+  "rgbmatrixemulator>=0.13.3,<0.14.0",
+  "scipy-stubs>=1.14.1.5,<1.15.0",
+  "types-pillow>=10.2.0.20240520,<11.0.0.0",
+  "types-pyaudio>=0.2.16.20240516,<0.3.0",
+]
+test = [
+  "pytest-codspeed>=3.1.0,<4.0.0",
+  "pytest-cov>=6.2.1,<7.0.0",
+  "pytest-env>=1.5.0,<2.0.0",
+  "pytest-xdist>=3.8.0,<4.0.0",
+]
 
-[tool.poetry.group.dev.dependencies]
-rgbmatrixemulator = "^0.13.3"
-types-pyaudio = "^0.2.16.20240516"
-scipy-stubs = "^1.14.1.5"
-
-[tool.poetry.group.test.dependencies]
-pytest-codspeed = "^3.1.0"
-pytest-env = "^1.5.0"
-pytest-cov = "^6.2.1"
-pytest-xdist = "^3.8.0"
+[tool.uv]
+default-groups = ["dev", "test"]
 
 [tool.pytest.ini_options]
 addopts = [
@@ -191,5 +198,5 @@ sort_by_size = true
 [tool.creosote]
 paths = ["led_matrix_controller"]
 deps-file = "pyproject.toml"
-sections = ["tool.poetry.dependencies"]
+sections = ["project.dependencies"]
 exclude-deps = ["paho-mqtt", "pillow", "httpcore"]

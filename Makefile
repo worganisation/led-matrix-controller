@@ -13,7 +13,6 @@ clean:
 	cd rpi-rgb-led-matrix && git reset --hard && git clean -fd
 
 create:
-	virtualenv -p 3.11 .venv
 	$(MAKE) install-all
 
 	sudo mkdir -p /var/cache/led-matrix-controller
@@ -52,7 +51,7 @@ enable-ap:
 	sudo systemctl enable audio_processor.service
 
 install-python:
-	.venv/bin/pip install -r requirements.txt
+	uv sync --locked --no-default-groups
 
 install-service:
 	sudo cp service/led_matrix_controller.service /etc/systemd/system/
@@ -115,7 +114,7 @@ tail-ap:
 	clear && sudo journalctl -u audio_processor.service -f -n 100
 
 test:
-	poetry run pytest
+	uv run pytest
 
 update:
 	git add .
@@ -126,4 +125,4 @@ update:
 
 
 vscode-shortcut-1:
-	poetry run python led_matrix_controller/rain.py
+	uv run python led_matrix_controller/rain.py
