@@ -18,6 +18,14 @@ dependencies = [
   "wg-utilities[exceptions]>=5.17.4,<6.0.0",
 ]
 
+[tool.semantic_release]
+ignore_token_for_push = true
+build_command = """
+    python -m pip install uv
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+  """
+
 [dependency-groups]
 dev = [
   "mypy>=2.3.0,<2.4.0",
