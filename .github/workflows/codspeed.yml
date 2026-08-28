@@ -19,7 +19,13 @@ env:
 jobs:
   benchmarks:
     name: Run Benchmarks
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cc
+      - iac
+      - opentofu
     if: >-
       !github.event.pull_request.draft
     steps:
@@ -38,7 +44,7 @@ jobs:
           key: dotlocal
 
       - name: Install uv
-        uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
 
