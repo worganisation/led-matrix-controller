@@ -15,7 +15,7 @@ on:
       - ready_for_review
 
 concurrency:
-  group: unit-tests-${{ github.ref }}
+  group: 'unit-tests-${{ github.ref }}'
   cancel-in-progress: true
 
 permissions:
@@ -24,8 +24,8 @@ permissions:
 jobs:
   unit-tests:
     name: Unit Tests
-    uses: worganisation/github-config-files/.github/workflows/__unit-tests.yml@0.8.3
+    uses: worganisation/github-config-files/.github/workflows/__unit-tests.yml@0.8.4
     with:
       python-version: '3.11'
-      source-dir: led_matrix_controller
+      source-dir: 'led_matrix_controller'
     secrets: inherit
