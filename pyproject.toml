@@ -11,7 +11,7 @@ dependencies = [
   "httpx>=0.28.1,<0.29.0",
   "numpy==2.0.1",
   "paho-mqtt>=2.1.0,<3.0.0",
-  "pillow>=11.2.1,<12.0.0",
+  "pillow>=11.2.1,<13.0.0",
   "pyaudio>=0.2.14,<0.3.0",
   "scipy>=1.16.0,<2.0.0",
   "typing-extensions>=4.12.2,<5.0.0",
