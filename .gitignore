@@ -349,3 +349,6 @@ resources/gh_cli/
 !emulator_config.json
 
 _local_sandbox
+
+# Renovate repository policy
+!/renovate.json
