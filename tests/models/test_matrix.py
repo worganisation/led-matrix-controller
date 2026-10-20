@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
+from queue import Empty
 from signal import SIGTERM
 from threading import Event, RLock, Thread
 from typing import TYPE_CHECKING, cast
@@ -42,7 +43,15 @@ def test_alert_precedes_queued_combination(
     matrix._content_queue = ContentQueue(mqtt_client, "/test/content-queue")
 
     alert = Mock(spec=GifViewer, id="gif-alert-bell", priority=1.0)
-    background = Mock(spec=Combination, id="combination", priority=10.0)
+    background = Mock(
+        spec=Combination,
+        id="combination",
+        priority=10.0,
+        content=(
+            Mock(spec=Clock, priority=15.0, stop_reason=None),
+            Mock(spec=RainingGrid, priority=10.0, stop_reason=None),
+        ),
+    )
     parameters = cast("ContentParameters", {"source": "doorbell"})
     matrix._content_queue.add(background, cast("ContentParameters", {}))
     matrix._content_queue.add(alert, parameters)
@@ -569,3 +578,149 @@ def test_render_progress_is_published_only_after_a_frame() -> None:
     assert matrix.tick == 3
     assert matrix.mqtt_client.publish.call_count == 2
     assert '"frame": 3' in matrix.mqtt_client.publish.call_args.kwargs["payload"]
+
+
+def test_alert_during_cancelled_child_teardown_resumes_only_requested_children(
+    mqtt_client: MqttClient,
+) -> None:
+    """Interrupting a draining child cannot put that cancelled member back on screen."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    matrix._attempt_combination.side_effect = partial(Matrix._attempt_combination, matrix)
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content, matrix,
+    )
+    rain = Mock(spec=RainingGrid, id="rain", priority=10.0, active=True, stop_reason=None)
+    clock = Mock(spec=Clock, id="clock", priority=15.0, active=True, stop_reason=None)
+    combination = Mock(
+        spec=Combination,
+        id="combination",
+        priority=10.0,
+        active=True,
+        stop_reason=None,
+        content=(clock, rain),
+    )
+    combination.stop.side_effect = partial(ContentBase.stop, combination)
+    matrix.current_content = combination
+    alert = Mock(spec=GifViewer, id="alert", priority=1.0, stop_reason=None)
+    matrix._content = {"alert": alert}
+    parameters = cast("ContentParameters", {})
+    ContentBase.stop(rain, StopType.CANCEL)
+
+    def drain() -> Iterator[None]:
+        yield
+        Matrix._queue_content_message(
+            matrix, {"id": "alert", "priority": 1, "parameters": parameters},
+        )
+        yield
+
+    draining_child = drain()
+    next(draining_child)
+    next(draining_child)
+    assert combination.stop_reason == StopType.PRIORITY
+    Matrix._handle_content_stop(matrix, parameters, Mock())
+
+    assert Matrix._get_next_content(matrix)[0] is alert
+    assert Matrix._get_next_content(matrix)[0] is clock
+    assert matrix._content_queue.empty()
+    assert rain.stop_reason == StopType.CANCEL
+    assert rain.priority == const.MAX_PRIORITY
+
+
+def test_clock_request_during_cancelled_rain_teardown_does_not_recreate_rain(
+    mqtt_client: MqttClient,
+) -> None:
+    """A new clock request must not include rain which is only alive to finish draining."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    matrix._attempt_combination.side_effect = partial(Matrix._attempt_combination, matrix)
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content, matrix,
+    )
+    rain = Mock(spec=RainingGrid, id="rain", priority=10.0, active=True, stop_reason=None)
+    rain.stop.side_effect = partial(ContentBase.stop, rain)
+    clock = Mock(spec=Clock, id="clock", priority=15.0, stop_reason=None)
+    matrix.current_content = rain
+    matrix._content = {"clock": clock}
+    parameters = cast("ContentParameters", {})
+    ContentBase.stop(rain, StopType.CANCEL)
+
+    def teardown() -> Iterator[None]:
+        yield
+        Matrix._queue_content_message(
+            matrix, {"id": "clock", "priority": 15, "parameters": parameters},
+        )
+        yield
+
+    rain.teardown.side_effect = teardown
+    Matrix._handle_content_stop(matrix, parameters, Mock())
+
+    assert Matrix._get_next_content(matrix)[0] is clock
+    assert matrix._content_queue.empty()
+    matrix._sort_content.assert_not_called()
+    assert rain.priority == const.MAX_PRIORITY
+
+
+@pytest.mark.parametrize("reason", [StopType.CANCEL, StopType.EXPIRED])
+def test_stale_queued_combination_dissolves_before_resumption(
+    mqtt_client: MqttClient,
+    reason: StopType,
+) -> None:
+    """Finalized children are filtered even when their combination was already queued."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    rain = Mock(spec=RainingGrid, id="rain", priority=10.0, stop_reason=None)
+    clock = Mock(spec=Clock, id="clock", priority=15.0, stop_reason=None)
+    combination = Mock(
+        spec=Combination, id="combination", priority=10.0, content=(rain, clock),
+    )
+    matrix._content_queue.add(combination, cast("ContentParameters", {}))
+    ContentBase.stop(rain, reason)
+
+    selected, _ = Matrix._get_next_content(matrix)
+
+    assert selected is clock
+    assert matrix._content_queue.empty()
+
+
+def test_all_cancelled_queued_combination_is_discarded(mqtt_client: MqttClient) -> None:
+    """An obsolete queued combination can drain to an empty queue without rendering."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    rain = Mock(
+        spec=RainingGrid,
+        id="rain",
+        priority=const.MAX_PRIORITY,
+        stop_reason=StopType.CANCEL,
+    )
+    combination = Mock(spec=Combination, id="combination", priority=10.0, content=(rain,))
+    matrix._content_queue.add(combination, cast("ContentParameters", {}))
+
+    with pytest.raises(Empty):
+        Matrix._get_next_content(matrix)
+
+    assert matrix._content_queue.empty()
+
+
+def test_explicit_request_can_restart_cancelled_content(mqtt_client: MqttClient) -> None:
+    """A fresh request replaces the cancelled lifecycle rather than being filtered out."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    matrix.current_content = None
+    alert = Mock(
+        spec=GifViewer,
+        id="alert",
+        priority=const.MAX_PRIORITY,
+        stop_reason=StopType.CANCEL,
+    )
+    matrix._content = {"alert": alert}
+    parameters = cast("ContentParameters", {})
+
+    Matrix._queue_content_message(
+        matrix, {"id": "alert", "priority": 1, "parameters": parameters},
+    )
+
+    assert Matrix._get_next_content(matrix)[0] is alert
+    assert alert.stop_reason is None

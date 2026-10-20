@@ -52,6 +52,15 @@ LOGGER = get_streaming_logger(__name__)
 ContentParameters = MappingProxyType[str, str]
 
 
+def _is_requested(content: ContentBase[GridView] | ContentBase[mtrx.Canvas]) -> bool:
+    """Whether content still has an outstanding display request."""
+    return (
+        content.priority != const.MAX_PRIORITY
+        and isfinite(content.priority)
+        and content.stop_reason not in {StopType.CANCEL, StopType.EXPIRED}
+    )
+
+
 class ContentPayload(TypedDict):
     """Object sent via MQTT to display content on the matrix."""
 
@@ -340,7 +349,9 @@ class Matrix:
         )
         children = tuple(
             {
-                id(child): child for child in (*current_children, *target_children)
+                id(child): child
+                for child in (*current_children, *target_children)
+                if _is_requested(child)
             }.values(),
         )
         if len(children) <= 1 or any(
@@ -389,7 +400,11 @@ class Matrix:
                     self._content_thread = None
                     return
 
-                content, parameters = self._get_next_content()
+                try:
+                    content, parameters = self._get_next_content()
+                except Empty:
+                    continue
+
                 content.stop_reason = None
                 content.active = True
                 self.current_content = content
@@ -464,14 +479,30 @@ class Matrix:
         dry_run: bool = False,
     ) -> tuple[ContentBase[Any], ContentParameters]:
         """Get the next content from the queue and check for available combinations."""
-        (
-            _,
-            next_content,
-            parameters,
-        ) = self._content_queue.get(pop=not dry_run)
+        while True:
+            _, next_content, parameters = self._content_queue.get(
+                block=False,
+                pop=not dry_run,
+            )
+            if dry_run:
+                return next_content, parameters
 
-        if dry_run:
-            return next_content, parameters
+            if isinstance(next_content, Combination) and (
+                len(next_content.content) <= 1
+                or any(not _is_requested(child) for child in next_content.content)
+            ):
+                for child in next_content.content:
+                    if _is_requested(child):
+                        self._content_queue.add(child, parameters)
+
+                continue
+
+            if not isinstance(next_content, Combination) and not _is_requested(
+                next_content,
+            ):
+                continue
+
+            break
 
         to_remove = []
 
@@ -506,34 +537,12 @@ class Matrix:
         if self.current_content is None:
             return
 
-        if self.current_content.stop_reason == StopType.TRANSFORM_REQUIRED and isinstance(
-            self.current_content,
-            Combination,
-        ):
-            # Unlikely to ever be more than one iteration, but just in case
-            for c in self.current_content.content:
-                if c.priority != const.MAX_PRIORITY and c.stop_reason not in {
-                    StopType.CANCEL,
-                    StopType.EXPIRED,
-                }:
-                    LOGGER.debug(
-                        "Adding %r to queue with priority %f from stopping combination",
-                        c.id,
-                        c.priority,
-                    )
-                    self._content_queue.add(c, {})  # type: ignore[arg-type]
-                else:
-                    LOGGER.warning(
-                        "Skipping stopped combination child %r with priority %f",
-                        c.id,
-                        c.priority,
-                    )
-
-        elif (
+        if (
             self.current_content.stop_reason
             not in {
                 StopType.PRIORITY,
                 StopType.COMBINED,  # Preserve the content's state for reuse in the combination.
+                StopType.TRANSFORM_REQUIRED,
             }
             and (teardown_gen := self.current_content.teardown())
         ):
@@ -556,17 +565,25 @@ class Matrix:
         LOGGER.info("Content `%s` complete", self.current_content.id)
 
         with self._content_lock:
-            if (
-                self.current_content.priority != const.MAX_PRIORITY
-                and self.current_content.stop_reason
-                not in {StopType.CANCEL, StopType.EXPIRED, StopType.COMBINED}
-                and not any(
+            if self.current_content.stop_reason in {
+                StopType.CANCEL,
+                StopType.EXPIRED,
+                StopType.COMBINED,
+            }:
+                return
+
+            remaining = (
+                self.current_content.content
+                if isinstance(self.current_content, Combination)
+                else (self.current_content,)
+            )
+            for content in remaining:
+                if _is_requested(content) and not any(
                     isinstance(queued_content, Combination)
-                    and self.current_content in queued_content.content
+                    and any(child is content for child in queued_content.content)
                     for _, queued_content, _ in self._content_queue
-                )
-            ):
-                self._content_queue.add(self.current_content, parameters)
+                ):
+                    self._content_queue.add(content, parameters)
 
     @process_exception(logger=LOGGER, raise_after_processing=False)
     def _on_content_message(
@@ -598,6 +615,9 @@ class Matrix:
             ),
             3,
         )
+
+        if target_content.stop_reason in {StopType.CANCEL, StopType.EXPIRED}:
+            target_content.stop_reason = None
 
         # If they're both dynamic, they could be combined
         if isinstance(target_content, DynamicContent) and self.current_content:
