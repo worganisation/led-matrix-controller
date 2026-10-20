@@ -25,6 +25,6 @@ jobs:
           set -eu
           owner=$(stat -c '%u:%g' /repair)
           test "${owner%%:*}" != 0
-          find /repair -uid 0 -exec chown "${owner}" {} +
+          find /repair -uid 0 -exec chown -h "${owner}" {} +
           test "$(find /repair -uid 0 | wc -l)" -eq 0
           echo 'Matrix checkout ownership restored for runner 4.'
