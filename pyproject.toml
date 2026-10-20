@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [tool.semantic_release]
+major_on_zero = true
 tag_format = "{version}"
 version_toml = ["pyproject.toml:project.version"]
 build_command = """
@@ -26,6 +27,9 @@ build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
     git add uv.lock
   """
+
+[tool.semantic_release.changelog.default_templates]
+mask_initial_release = false
 
 [tool.semantic_release.remote]
 ignore_token_for_push = true
