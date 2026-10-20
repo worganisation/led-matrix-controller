@@ -2,6 +2,118 @@
 
 <!-- version list -->
 
+## v1.12.0 (2026-10-20)
+
+### Bug Fixes
+
+- Let doorbell alerts interrupt combined displays
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- Preserve native submodule build artifacts during deployment
+  ([#546](https://github.com/worganisation/led-matrix-controller/pull/546),
+  [`6d0bfcd`](https://github.com/worganisation/led-matrix-controller/commit/6d0bfcdca33a655360ff78f08aeb432cf41c50ba))
+
+- Preserve priority when selecting queued combinations
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- **ci**: Allow unit test workflow to report PR coverage
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- **ci**: Avoid cache writes after container ownership cleanup
+  ([#536](https://github.com/worganisation/led-matrix-controller/pull/536),
+  [`bba855d`](https://github.com/worganisation/led-matrix-controller/commit/bba855d2f056cd207d531e93eb49233e3276b34e))
+
+- **ci**: Build audio dependencies in the test container
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- **ci**: Preserve runner ownership and scope coverage Git trust
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- **ci**: Restore checkout ownership and correct coverage arguments
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- **ci**: Run benchmarks only in their dedicated workflow
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- **ci**: Support source builds and install coverage reporter
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+- **test**: Stop rain simulation workers after benchmarks
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+### Chores
+
+- Standardise semantic-release defaults
+  ([#544](https://github.com/worganisation/led-matrix-controller/pull/544),
+  [`8a155bc`](https://github.com/worganisation/led-matrix-controller/commit/8a155bc77efb5f32a71a95e559416b89a6e5b83f))
+
+- **ci**: Sync shared repository workflows
+  ([#536](https://github.com/worganisation/led-matrix-controller/pull/536),
+  [`bba855d`](https://github.com/worganisation/led-matrix-controller/commit/bba855d2f056cd207d531e93eb49233e3276b34e))
+
+- **deps**: Configure Renovate updates
+  ([#537](https://github.com/worganisation/led-matrix-controller/pull/537),
+  [`88cda4a`](https://github.com/worganisation/led-matrix-controller/commit/88cda4a78ee97ac7bbf06a14680b49afed92f8ef))
+
+- **deps**: Update dependency mypy to >=2.4.0,<2.5.0
+  ([#543](https://github.com/worganisation/led-matrix-controller/pull/543),
+  [`a10fd37`](https://github.com/worganisation/led-matrix-controller/commit/a10fd37815d88c3455b219b859a643f58a92d73f))
+
+- **sync**: Pin github-config-files workflows to 0.7.1
+  ([#533](https://github.com/worganisation/led-matrix-controller/pull/533),
+  [`08ebe52`](https://github.com/worganisation/led-matrix-controller/commit/08ebe52ad580d4fa99fb34eaef8f6ff73fe10cf5))
+
+- **sync**: Pin github-config-files workflows to 0.8.2
+  ([#534](https://github.com/worganisation/led-matrix-controller/pull/534),
+  [`3ce4e7c`](https://github.com/worganisation/led-matrix-controller/commit/3ce4e7c8d2b6cecb687c4fcea33ea4c9ca9b673c))
+
+### Code Style
+
+- Fixes from prek hooks ([#536](https://github.com/worganisation/led-matrix-controller/pull/536),
+  [`bba855d`](https://github.com/worganisation/led-matrix-controller/commit/bba855d2f056cd207d531e93eb49233e3276b34e))
+
+- Fixes from prek hooks ([#534](https://github.com/worganisation/led-matrix-controller/pull/534),
+  [`3ce4e7c`](https://github.com/worganisation/led-matrix-controller/commit/3ce4e7c8d2b6cecb687c4fcea33ea4c9ca9b673c))
+
+- Fixes from prek hooks ([#533](https://github.com/worganisation/led-matrix-controller/pull/533),
+  [`08ebe52`](https://github.com/worganisation/led-matrix-controller/commit/08ebe52ad580d4fa99fb34eaef8f6ff73fe10cf5))
+
+### Documentation
+
+- Explain combination identity check
+  ([#545](https://github.com/worganisation/led-matrix-controller/pull/545),
+  [`fd75bd8`](https://github.com/worganisation/led-matrix-controller/commit/fd75bd8682130db1ba0d98ee94fb6a8466772fa8))
+
+### Features
+
+- Deploy stable matrix releases over shared LAN SSH
+  ([#546](https://github.com/worganisation/led-matrix-controller/pull/546),
+  [`6d0bfcd`](https://github.com/worganisation/led-matrix-controller/commit/6d0bfcdca33a655360ff78f08aeb432cf41c50ba))
+
+- **ci**: Release manually and deploy published releases
+  ([#538](https://github.com/worganisation/led-matrix-controller/pull/538),
+  [`912d08f`](https://github.com/worganisation/led-matrix-controller/commit/912d08f23eaa4e1286e91058969f5c4747a2d9d7))
+
+- **ci**: Require manually invoked semantic releases
+  ([#538](https://github.com/worganisation/led-matrix-controller/pull/538),
+  [`912d08f`](https://github.com/worganisation/led-matrix-controller/commit/912d08f23eaa4e1286e91058969f5c4747a2d9d7))
+
+### Refactoring
+
+- **ci**: Use the unified semantic release runner
+  ([#538](https://github.com/worganisation/led-matrix-controller/pull/538),
+  [`912d08f`](https://github.com/worganisation/led-matrix-controller/commit/912d08f23eaa4e1286e91058969f5c4747a2d9d7))
+
+
 ## v1.11.2 (2026-08-23)
 
 ### Bug Fixes
