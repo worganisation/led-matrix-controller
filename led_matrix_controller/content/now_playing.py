@@ -6,7 +6,6 @@ import asyncio
 from dataclasses import dataclass, field
 from hashlib import sha256
 from io import BytesIO
-from pathlib import Path
 from re import Pattern
 from re import compile as compile_regex
 from threading import Thread
@@ -17,7 +16,7 @@ import aiohttp
 import numpy as np
 from content.base import GridView, StopType
 from PIL import Image
-from utils import const
+from utils.config import SETTINGS
 from wg_utilities.loggers import get_streaming_logger
 
 from .dynamic_content import DynamicContent
@@ -25,6 +24,7 @@ from .setting import ParameterSetting
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from pathlib import Path
 
     from numpy.typing import DTypeLike, NDArray
 
@@ -52,18 +52,7 @@ _INITIAL_TRACK_META: Final[TrackMeta] = {
 class NowPlaying(DynamicContent):
     """Class for the creation, caching, and management of artwork images."""
 
-    ARTWORK_DIRECTORY: ClassVar[Path] = (
-        (
-            Path("/var/cache")  # Script is run as root so this needs to be hardcoded
-            if const.IS_PI
-            else Path.home()
-        )
-        .joinpath(
-            "led-matrix-controller",
-            "artwork",
-        )
-        .resolve()
-    )
+    ARTWORK_DIRECTORY: ClassVar[Path] = SETTINGS.artwork_dir
 
     ALPHANUM_PATTERN: ClassVar[Pattern[str]] = compile_regex(r"[\W_]+")
 

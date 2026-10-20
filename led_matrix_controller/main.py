@@ -43,7 +43,6 @@ def get_library() -> tuple[ContentBase[Any], ...]:
 
 def main() -> None:
     """Run the rain simulation."""
-    # Needs to be before the content library, idk why :(
     mqtt_client = MqttClient(connect=True)
 
     library = get_library()

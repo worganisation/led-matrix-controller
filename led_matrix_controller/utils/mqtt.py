@@ -66,6 +66,8 @@ class MqttClient(metaclass=Singleton):
         self._retain = retain
         self._topics: set[str] = set()
 
+        self._connection_failures = 0
+
         if connect and not self._client.is_connected():
             LOGGER.debug(
                 "Connecting to MQTT broker at %s. This device's hostname is %s",
@@ -73,8 +75,6 @@ class MqttClient(metaclass=Singleton):
                 const.HOSTNAME,
             )
             self._client.connect(const.MQTT_HOST)
-
-        self._connection_failures = 0
 
     def _on_connect(
         self,
@@ -91,7 +91,10 @@ class MqttClient(metaclass=Singleton):
         # A broker restart clears its in-memory subscription state. Keep track of
         # callbacks registered by this process and restore their subscriptions on
         # every successful connection.
-        for topic in self._topics:
+        if rc.is_failure:
+            return
+
+        for topic in tuple(self._topics):
             client.subscribe(topic)
 
         if self._topics:
@@ -211,12 +214,14 @@ class MqttClient(metaclass=Singleton):
             topic,
             payload,
             qos=qos,
-            retain=retain or self._retain,
+            retain=self._retain if retain is None else retain,
             properties=properties,
         )
         LOGGER.debug(
             "Published message to topic %s%s: %r",
             topic,
-            " with retain flag set" if retain or self._retain else "",
+            " with retain flag set"
+            if (self._retain if retain is None else retain)
+            else "",
             payload,
         )

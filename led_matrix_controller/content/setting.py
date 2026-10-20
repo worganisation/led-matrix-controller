@@ -6,8 +6,8 @@ import math
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from json import dumps
-from threading import Thread
-from time import sleep
+from threading import RLock, Thread
+from time import monotonic
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -121,9 +121,6 @@ class Setting(Generic[S]):
     """The MQTT client to use for this setting."""
 
     def __post_init__(self) -> None:
-        if not hasattr(self.__class__, "_MQTT_CLIENT"):
-            self.__class__._MQTT_CLIENT = MqttClient()  # ruff:ignore[private-member-access]
-
         if (
             self.minimum is not None
             and self.maximum is not None
@@ -327,6 +324,9 @@ class Setting(Generic[S]):
     @property
     def mqtt_client(self) -> MqttClient:
         """The MQTT client to use for this setting."""
+        if not hasattr(self.__class__, "_MQTT_CLIENT"):
+            self.__class__._MQTT_CLIENT = MqttClient()  # ruff:ignore[private-member-access]
+
         return self.__class__._MQTT_CLIENT  # ruff:ignore[private-member-access]
 
     _mqtt_topic: str = field(init=False, repr=False)
@@ -410,91 +410,74 @@ class TransitionableSettingMixin(Setting[N]):
 
         return super().__post_init__()
 
+    _transition_lock: RLock = field(default_factory=RLock, init=False, repr=False)
+    _transition_running: bool = field(default=False, init=False, repr=False)
+
     def _set_value_from_payload(self, payload: N) -> None:
-        """Set the value of the setting from the payload."""
-        # Only transition if the automaton is currently displaying and a transition rate is set
-        if self.instance.active and (self.transition_rate or 0) > 0:
-            LOGGER.debug("Set target value to %r", payload)
+        """Replace the target atomically, starting at most one transition worker."""
+        with self._transition_lock:
             self.target_value = payload
 
-            if not (
-                hasattr(self, "transition_thread") and self.transition_thread.is_alive()
-            ):
-                self.transition_thread = Thread(
-                    target=self._transition_worker,
-                    name=f"{self.slug}_transition",
-                )
-                self.transition_thread.start()
-                LOGGER.debug("Started transition thread")
-            else:
-                LOGGER.debug("Transition thread already running")
-        else:
-            Setting._set_value_from_payload(self, payload)  # ruff:ignore[private-member-access]
+            if not self.instance.active or not self.transition_rate:
+                Setting._set_value_from_payload(self, payload)  # ruff:ignore[private-member-access]
+                return
+
+            if self._transition_running:
+                return
+
+            self._transition_running = True
+            self.transition_thread = Thread(
+                target=self._transition_worker,
+                name=f"{self.slug}_transition",
+                daemon=True,
+            )
+            self.transition_thread.start()
 
     def _transition_worker(self) -> None:
-        LOGGER.info("Transitioning %s to %s", self.slug, self.target_value)
-
-        tick_condition = self.matrix.tick_condition
-        tick_condition.acquire()
-
+        """Log failures without leaving a permanently registered worker."""
         try:
-            cc = self.matrix.current_content
+            self._run_transition()
+        except Exception:
+            with self._transition_lock:
+                self._transition_running = False
 
-            if self.type_ is int:
-                # Wait until accumulated change reaches 1
-                ticks_between_transitions = math.ceil(1 / self.transition_rate)
-
-                transition_amount: N = 1
-            else:
-                # Wait until accumulated change reaches the specified precision
-                precision_value = 10**-self.fp_precision
-                ticks_between_transitions = math.ceil(
-                    precision_value / self.transition_rate,
-                )
-
-                transition_amount = ticks_between_transitions * self.transition_rate
-
-            while self.value != self.target_value:
-                if (
-                    self.matrix.tick % ticks_between_transitions == 0
-                    and (delta := self.target_value - self.value) != 0
-                ):
-                    # Recalculate each step so mid-transition target changes reverse correctly
-                    # instead of overshooting (e.g. brightness below 0).
-                    direction = 1 if delta > 0 else -1
-                    self.value = self._coerce_and_format(
-                        round(
-                            self.value + min(transition_amount, abs(delta)) * direction,
-                            self.fp_precision,
-                        ),
-                    )
-
-                if not (cc and cc.is_sleeping):
-                    # If the content is sleeping, then it isn't yielding, so the canvas isn't
-                    # being swapped, and that means that no ticks are happening...
-                    # So only wait for a tick notification if the content is not sleeping!
-                    tick_condition.wait()
-                else:
-                    sleep(const.TICK_LENGTH)
-        finally:
-            tick_condition.release()
-
-        LOGGER.info(
-            'Transition complete: %s("%s").%s = %s',
-            self.instance.__class__.__name__,
-            self.instance.id,
-            self.slug,
-            self.value,
-        )
+            LOGGER.exception("Failed to transition setting %s", self.slug)
+            return
 
         self.matrix.publish_attributes()
 
-        if self.value != self.target_value:
-            self.mqtt_client.publish(
-                self.mqtt_topic,
-                self.value,
-                retain=True,
-            )
+    def _run_transition(self) -> None:
+        """Advance on a bounded clock even when the renderer is idle or sleeping."""
+        precision = 1 if self.type_ is int else 10**-self.fp_precision
+        ticks_per_step = max(1, math.ceil(precision / self.transition_rate))
+        interval = ticks_per_step * const.TICK_LENGTH
+        amount = ticks_per_step * self.transition_rate
+        next_step = monotonic()
+
+        while True:
+            with self._transition_lock:
+                if not self.instance.active and self.value != self.target_value:
+                    self.value = self.target_value
+
+                if self.value == self.target_value:
+                    # Clear this under the target lock so a new request starts a worker.
+                    self._transition_running = False
+                    break
+
+                if monotonic() >= next_step:
+                    delta = self.target_value - self.value
+                    self.value = self._coerce_and_format(
+                        round(
+                            self.value
+                            + min(amount, abs(delta)) * (1 if delta > 0 else -1),
+                            self.fp_precision,
+                        ),
+                    )
+                    next_step = monotonic() + interval
+
+            # Condition.wait releases the renderer's lock and always has a timeout.
+            with self.matrix.tick_condition:
+                self.matrix.tick_condition.wait(timeout=const.TICK_LENGTH)
 
 
 @dataclass(kw_only=True)
