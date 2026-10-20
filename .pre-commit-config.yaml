@@ -34,11 +34,10 @@ repos:
           - paho-mqtt==2.1.0
           - pytest==9.1.1
           - pytest-codspeed==3.2.0
-          - types-pillow==10.2.0.20240822
           - wg-utilities==5.17.4
           - rgbmatrixemulator==0.13.5
           - types-pyaudio==0.2.16.20260508
-          - scipy-stubs==1.14.1.6
+          - scipy-stubs==1.17.1.5
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.11.32
