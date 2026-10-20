@@ -13,8 +13,12 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  CACHE_FILE: uv.lock
+concurrency:
+  group: codspeed-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   benchmarks:
@@ -26,41 +30,38 @@ jobs:
       - cc
       - iac
       - opentofu
-    if: >-
-      !github.event.pull_request.draft
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    timeout-minutes: 20
+    container: python:3.11-slim-bookworm
     steps:
-      - name: Clone Repo
+      - name: Restore workspace ownership
+        run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"
+
+      - name: Install native build dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential git portaudio19-dev curl ca-certificates
+
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.11'
-
-      - name: Load cached .local
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.local
-          key: dotlocal
 
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          enable-cache: ${{ runner.environment == 'github-hosted' }}
-          cache-local-path: ${{ runner.tool_cache }}/uv-cache
+          enable-cache: false
+          cache-local-path: ${{ github.workspace }}/.uv-cache
 
-      - name: Load Cached Venv
-        id: cached-uv-dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .venv
-          key: venv-${{ hashFiles(env.CACHE_FILE) }}
-
-      - name: Install Dependencies
-        run: uv sync --locked
+      - name: Install Python dependencies
+        run: uv sync --locked --all-groups
 
       - name: Run Benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
+          mode: simulation
+          cache-instruments: false
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: uv run pytest --codspeed -v
+          run: uv run --no-sync pytest tests/benchmark --codspeed -n 0 --no-cov
+
+      - name: Restore workspace ownership
+        if: always()
+        run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"

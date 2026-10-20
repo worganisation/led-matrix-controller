@@ -14,6 +14,16 @@ The workflow fetches and runs `scripts/deploy-release.sh` from the selected rele
 
 To redeploy a published stable release containing the deployment script, run **Actions → Deploy MtrxPi Release → Run workflow** from `main` and enter its tag. Deployments to mtrxpi are serialized, and prereleases are excluded. A failed installation or health check fails the deployment; inspect the job output and service journal before retrying.
 
+## Development
+
+Use Python 3.11 and install the locked dependencies with `uv sync --locked`. PyAudio needs PortAudio development headers (`portaudio19-dev` on Debian). The Python and NumPy versions match the Pi deployment; dependency upgrades must retain compatibility with its native matrix bindings.
+
+`make run` starts the controller on the Pi. `make vscode-shortcut-1` starts the controller with the desktop matrix emulator; both use `led_matrix_controller/main.py`. The `rain` target is an alias for `run`, and content selection comes from MQTT.
+
+Unit tests and CodSpeed benchmarks have separate repository-owned workflows. Both install native dependencies in a Python 3.11 container. Unit tests exclude benchmarks; CodSpeed runs only `tests/benchmark`, without coverage or parallel test workers.
+
+Generate Home Assistant MQTT entity files from the content settings with `env PYTHONPATH=led_matrix_controller DEBUG_MODE=1 uv run python dev_tools/home_assistant/generate_mqtt_entities.py --output-dir /path/to/home-assistant/entities/mqtt`. The command loads the validated application configuration and content metadata without starting the display, audio capture, or MQTT connection. Review the generated changes in the Home Assistant repository before committing them.
+
 ## Content
 
 All content has the following parameters:
