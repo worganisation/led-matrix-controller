@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [tool.semantic_release]
+major_on_zero = true
 tag_format = "{version}"
 version_toml = ["pyproject.toml:project.version"]
 build_command = """
@@ -26,6 +27,9 @@ build_command = """
     uv lock --upgrade-package "$PACKAGE_NAME"
     git add uv.lock
   """
+
+[tool.semantic_release.changelog.default_templates]
+mask_initial_release = false
 
 [tool.semantic_release.remote]
 ignore_token_for_push = true
@@ -39,6 +43,7 @@ dev = [
   "types-pyaudio>=0.2.16.20240516,<0.3.0",
 ]
 test = [
+  "diff-cover>=10.6.0",
   "pytest-codspeed>=3.1.0,<4.0.0",
   "pytest-cov>=6.2.1,<7.0.0",
   "pytest-env>=1.5.0,<2.0.0",
