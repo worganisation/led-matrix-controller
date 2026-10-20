@@ -456,7 +456,7 @@ class Matrix:
                         combine_with=next_content,
                     )
                 )
-                is not queued_content
+                is not queued_content  # Failed attempts return the queued object unchanged.
                 and isinstance(combined, Combination)
             ):
                 # Combination has been created, so overwrite the current content
