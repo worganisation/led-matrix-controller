@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from content.base import PreDefinedContent, StopType
-from PIL import Image
+from PIL.GifImagePlugin import GifImageFile
 from utils import const, to_kebab_case
 from wg_utilities.loggers import get_streaming_logger
 
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Generator
     from pathlib import Path
 
+    from PIL import Image
     from utils import mtrx
 
 LOGGER = get_streaming_logger(__name__)
@@ -27,7 +28,7 @@ class GifViewer(PreDefinedContent):
 
     path: Path
 
-    image: Image.Image = field(init=False, repr=False)
+    image: GifImageFile = field(init=False, repr=False)
 
     frame_multiplier: int = 1
     """The number of ticks to display each frame for."""
@@ -41,7 +42,7 @@ class GifViewer(PreDefinedContent):
         if not self.path.is_absolute():
             self.path = self.GIF_DIRECTORY / self.path
 
-        self.image = Image.open(self.path)
+        self.image = GifImageFile(self.path)
 
         self.canvas_count = int(self.image.n_frames) * self.frame_multiplier
 
