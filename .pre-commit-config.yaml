@@ -29,6 +29,7 @@ repos:
           - --show-error-codes
         additional_dependencies:
           - aiohttp==3.14.5
+          - pydantic-settings==2.16.1
           - numpy==2.0.1
           - paho-mqtt==2.1.0
           - pytest==9.1.1
