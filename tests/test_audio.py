@@ -226,7 +226,8 @@ def test_interrupted_write_invalidates_frame(
     frames.write(np.ones(221), 441, 44100)
     with monkeypatch.context() as patch:
         patch.setattr(
-            "utils.helpers.np.copyto", Mock(side_effect=OSError("copy interrupted")),
+            "utils.helpers.np.copyto",
+            Mock(side_effect=OSError("copy interrupted")),
         )
         with pytest.raises(OSError, match="interrupted"):
             frames.write(np.zeros(221), 441, 44100)
