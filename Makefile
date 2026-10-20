@@ -19,12 +19,6 @@ create:
 	sudo chown -R root:root /var/cache/led-matrix-controller
 	sudo chmod -R 777 /var/cache/led-matrix-controller
 
-	git submodule update --init --recursive
-
-	# Build and install Python bindings (automatically builds C++ library first)
-	$(MAKE) -C rpi-rgb-led-matrix/bindings/python build-python PYTHON=$(PYTHON)
-	$(MAKE) -C rpi-rgb-led-matrix/bindings/python install-python PYTHON=$(PYTHON)
-
 dev-update:
 	@$(MAKE) update
 	@$(MAKE) restart
@@ -51,7 +45,12 @@ enable-ap:
 	sudo systemctl enable audio_processor.service
 
 install-python:
-	uv sync --locked --no-default-groups
+	uv sync --locked --no-default-groups --inexact
+
+install-matrix:
+	git submodule update --init --recursive
+	$(MAKE) -C rpi-rgb-led-matrix/bindings/python build-python PYTHON=$(PYTHON)
+	$(MAKE) -C rpi-rgb-led-matrix/bindings/python install-python PYTHON=$(PYTHON)
 
 install-service:
 	sudo cp service/led_matrix_controller.service /etc/systemd/system/
@@ -69,7 +68,11 @@ install-service-ap:
 
 install-all:
 	@$(MAKE) install-python
+	@$(MAKE) install-matrix
 	@$(MAKE) install-service
+
+deploy:
+	@bash scripts/deploy-release.sh "$(TAG)"
 
 rain:
 	sudo .venv/bin/python led_matrix_controller/rain.py
