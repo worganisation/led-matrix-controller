@@ -33,8 +33,23 @@ jobs:
       - iac
       - opentofu
     timeout-minutes: 20
-    container: python:3.11-slim-bookworm
+    container:
+      image: python:3.11-slim-bookworm
+      volumes:
+        - /var/lib/github-actions-runner/worganisation-2/work/led-matrix-controller:/repair/runner-2
+        - /var/lib/github-actions-runner/worganisation-3/work/led-matrix-controller:/repair/runner-3
+        - /var/lib/github-actions-runner/worganisation-4/work/led-matrix-controller:/repair/runner-4
     steps:
+      - name: Repair container-created workspace files
+        run: |
+          for workspace in /repair/runner-*; do
+            owner=$(stat -c '%u:%g' "${workspace}")
+            find "${workspace}" -uid 0 -exec chown "${owner}" {} +
+          done
+
+      - name: Restore workspace ownership
+        run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"
+
       - name: Install native build dependencies
         run: |
           apt-get update
@@ -62,9 +77,8 @@ jobs:
           BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           uv run --no-sync diff-cover coverage.xml \
-            --config-file pyproject.toml \
             --compare-branch="origin/${BASE_REF}" \
-            --markdown-report .coverage-report.md
+            --format markdown:.coverage-report.md
 
       - name: Publish coverage summary
         if: always()
@@ -72,3 +86,7 @@ jobs:
           if [ -f .coverage-report.md ]; then
             cat .coverage-report.md >> "${GITHUB_STEP_SUMMARY}"
           fi
+
+      - name: Restore workspace ownership
+        if: always()
+        run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"
