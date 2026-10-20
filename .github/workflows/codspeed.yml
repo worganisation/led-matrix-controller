@@ -46,7 +46,8 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          enable-cache: true
+          enable-cache: ${{ runner.environment == 'github-hosted' }}
+          cache-local-path: ${{ runner.tool_cache }}/uv-cache
 
       - name: Load Cached Venv
         id: cached-uv-dependencies

@@ -7,12 +7,11 @@ on:
       - main
     paths:
       - .github/repo_labels.yml
-      - .github/workflows/manage-repo-labels.yml
   workflow_dispatch:
 
 jobs:
   manage-repo-labels:
     name: Manage Repo Labels
-    uses: worganisation/github-config-files/.github/workflows/__manage-repo-labels.yml@0.8.2
+    uses: worganisation/github-config-files/.github/workflows/__manage-repo-labels.yml@0.10.0
     permissions:
       issues: write
