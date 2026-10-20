@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-import ssl
-from contextlib import suppress
+import asyncio
 from dataclasses import dataclass, field
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from re import Pattern
 from re import compile as compile_regex
+from threading import Thread
+from time import monotonic
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final, TypedDict
 
-# The httpcore import is needed because httpx throws an error here for some reason
-# https://github.com/encode/httpx/blob/master/httpx/_transports/default.py#L150
-import httpcore  # noqa: F401
-import httpx
+import aiohttp
 import numpy as np
 from content.base import GridView, StopType
 from PIL import Image
 from utils import const
-from wg_utilities.functions import backoff, force_mkdir
 from wg_utilities.loggers import get_streaming_logger
 
 from .dynamic_content import DynamicContent
@@ -32,8 +30,6 @@ if TYPE_CHECKING:
 
 LOGGER = get_streaming_logger(__name__)
 
-SSL_CONTEXT = ssl.create_default_context()
-
 
 class TrackMeta(TypedDict):
     """Type definition for the track metadata."""
@@ -41,14 +37,14 @@ class TrackMeta(TypedDict):
     title: str | None
     album: str | None
     artist: str | None
-    album_artwork_url: httpx.URL | None
+    album_artwork_url: str | None
 
 
 _INITIAL_TRACK_META: Final[TrackMeta] = {
     "title": "",
     "album": "",
     "artist": "",
-    "album_artwork_url": httpx.URL(""),
+    "album_artwork_url": "",
 }
 
 
@@ -56,7 +52,7 @@ _INITIAL_TRACK_META: Final[TrackMeta] = {
 class NowPlaying(DynamicContent):
     """Class for the creation, caching, and management of artwork images."""
 
-    ARTWORK_DIRECTORY: ClassVar[Path] = force_mkdir(
+    ARTWORK_DIRECTORY: ClassVar[Path] = (
         (
             Path("/var/cache")  # Script is run as root so this needs to be hardcoded
             if const.IS_PI
@@ -66,7 +62,7 @@ class NowPlaying(DynamicContent):
             "led-matrix-controller",
             "artwork",
         )
-        .resolve(),
+        .resolve()
     )
 
     ALPHANUM_PATTERN: ClassVar[Pattern[str]] = compile_regex(r"[\W_]+")
@@ -74,108 +70,80 @@ class NowPlaying(DynamicContent):
     IS_OPAQUE: ClassVar[bool] = True
 
     track_metadata: Annotated[TrackMeta, ParameterSetting(icon="")] = field(
-        default_factory=lambda: _INITIAL_TRACK_META,
+        default_factory=_INITIAL_TRACK_META.copy,
     )
 
-    _current_image: tuple[Path, GridView] = field(
+    _current_image: tuple[tuple[Path, str], GridView] | None = field(
+        default=None,
         init=False,
         repr=False,
         compare=False,
-        hash=False,
     )
-    """Cache of current file path and image array."""
+    _download_thread: Thread | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _retry_after: tuple[tuple[Path, str], float] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def get_content(self) -> GridView:
-        """Get the Image of the artwork image from the local file/remote URL.
+        """Return cached pixels immediately while a worker loads missing artwork."""
+        if not (path := self.file_path) or not (url := self.artwork_uri):
+            return self.pixels
 
-        Returns:
-            Image: Image instance of the artwork image
-        """
-        if not self.file_path:
-            return self.zeros()
-
-        if hasattr(self, "_current_image") and self._current_image[0] == self.file_path:
+        key = (path, url)
+        if self._current_image is not None and self._current_image[0] == key:
             return self._current_image[1]
 
-        if self.file_path.is_file():
-            LOGGER.debug(
-                "Opening image from path %s for %s",
-                self.file_path,
-                self.album,
-            )
-            with suppress(FileNotFoundError):
-                self._current_image = (self.file_path, np.load(self.file_path))
-
-                return self._current_image[1]
-
-        LOGGER.debug("Image not found at %s for %s", self.file_path, self.album)
-
-        try:
-            return self.download()
-        except httpx.HTTPStatusError as err:
-            LOGGER.exception(
-                "HTTP error (%s %s) downloading artwork from %s for album %s",
-                err.response.status_code,
-                err.response.reason_phrase,
-                self.artwork_uri,
-                self.album,
-            )
-            LOGGER.error("Response content: %s", err.response.text)  # ruff:ignore[error-instead-of-exception]
-        except Exception:
-            LOGGER.exception(
-                "Failed to download artwork from %s for album %s",
-                self.artwork_uri,
-                self.album,
-            )
-        return self.zeros()
-
-    @backoff(httpx.HTTPStatusError, logger=LOGGER, timeout=60, max_delay=10)
-    def download(self) -> GridView:
-        """Download the image from the URL to store it locally for future use."""
-        if not (
-            self.artwork_uri
-            and str(self.artwork_uri)
-            and self.artist_directory
-            and self.file_path
+        if (self._download_thread is None or not self._download_thread.is_alive()) and (
+            self._retry_after is None
+            or self._retry_after[0] != key
+            or monotonic() >= self._retry_after[1]
         ):
-            LOGGER.error(
-                "Unable to download artwork for %s. "
-                "Missing required data: self.artwork_uri=%s, self.artist_directory=%s, self.file_path=%s",
-                self.album,
-                self.artwork_uri,
-                self.artist_directory,
-                self.file_path,
+            self._download_thread = Thread(
+                target=self._load_artwork,
+                args=(key,),
+                name="artwork-download",
+                daemon=True,
             )
-            return self.zeros()
+            self._download_thread.start()
 
-        self.ARTWORK_DIRECTORY.joinpath(self.artist_directory).mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        return self.pixels
 
-        LOGGER.debug("Downloading artwork from remote URL: %s", self.artwork_uri)
+    def _load_artwork(self, key: tuple[Path, str]) -> None:
+        """Load one metadata snapshot without blocking rendering or mixing tracks."""
+        path, url = key
+        try:  # noqa: PLW0717 — Cache reads and download fallback share one failure/backoff path.
+            try:
+                pixels = np.load(path, allow_pickle=False)
+            except (OSError, ValueError):
+                pixels = asyncio.run(self._download(url))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(path, pixels)
 
-        res = httpx.get(self.artwork_uri, timeout=120, verify=SSL_CONTEXT)
-        res.raise_for_status()
-        artwork_bytes = res.content
+        except Exception:
+            self._retry_after = (key, monotonic() + 30)
+            LOGGER.exception("Failed to load artwork for %s", path)
+        else:
+            self._current_image = (key, pixels)
 
-        img_arr = np.array(
-            Image
-            .open(BytesIO(artwork_bytes))
-            .resize((self.width, self.height))
-            .convert("RGBA"),
-        )
+    async def _download(self, url: str) -> GridView:
+        """Download and decode artwork with a bounded total request time."""
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
+            session.get(url) as response,
+        ):
+            response.raise_for_status()
+            artwork_bytes = await response.read()
 
-        np.save(force_mkdir(self.file_path, path_is_file=True), img_arr)
-
-        LOGGER.info(
-            "New image from %s saved at %s for album %r",
-            self.artwork_uri,
-            self.file_path,
-            self.album,
-        )
-
-        return img_arr
+        with Image.open(BytesIO(artwork_bytes)) as image:
+            return np.array(image.resize((self.width, self.height)).convert("RGBA"))
 
     def refresh_content(self) -> Generator[None, None, None]:
         """Refresh the content."""
@@ -183,8 +151,7 @@ class NowPlaying(DynamicContent):
 
         if None in self.track_metadata.values():
             self.stop(StopType.EXPIRED)
-            with suppress(AttributeError):
-                del self._current_image
+            self._current_image = None
 
     def zeros(self, *, dtype: DTypeLike = np.int_) -> NDArray[Any]:
         """Return a grid of zeros."""
@@ -212,7 +179,9 @@ class NowPlaying(DynamicContent):
         if not self.album:
             return None
 
-        return self.ALPHANUM_PATTERN.sub("", self.album).lower() + ".npy"
+        album = self.ALPHANUM_PATTERN.sub("", self.album).lower()
+        artwork_id = sha256((self.artwork_uri or "").encode()).hexdigest()[:16]
+        return f"{album}-{artwork_id}.npy"
 
     @property
     def file_path(self) -> Path | None:
@@ -237,7 +206,7 @@ class NowPlaying(DynamicContent):
         return self.track_metadata.get("artist")
 
     @property
-    def artwork_uri(self) -> httpx.URL | None:
+    def artwork_uri(self) -> str | None:
         """URL of the artwork."""
         return self.track_metadata.get("album_artwork_url")
 

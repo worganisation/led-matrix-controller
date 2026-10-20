@@ -131,4 +131,15 @@ class DynamicContent(ContentBase[GridView], ABC):
         self.active = True
 
         while self.active:
-            yield from self.refresh_content()
+            frames = self.refresh_content()
+            try:
+                while self.active:
+                    try:
+                        frame = next(frames)
+                    except StopIteration:
+                        break
+
+                    if self.active:
+                        yield frame
+            finally:
+                frames.close()

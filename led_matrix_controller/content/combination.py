@@ -13,7 +13,6 @@ from .dynamic_content import DynamicContent
 from .setting import ParameterSetting
 
 if TYPE_CHECKING:
-    import itertools
     from collections.abc import Generator
 
     from content.base import GridView
@@ -66,11 +65,14 @@ class Combination(DynamicContent):
         self,
         *,
         force_active: bool = False,
-    ) -> dict[str, itertools.chain[None]]:
+    ) -> dict[str, Generator[None, None, None]]:
         """Get the content chains."""
         content_chains = {}
         for content in self.content:
             content.active = force_active or content.active
+            if content.active:
+                content.stop_reason = None
+
             content_chains[content.id] = content.chain_generators()
 
         LOGGER.debug("Content chains: %s", ", ".join(content_chains.keys()))
@@ -81,58 +83,56 @@ class Combination(DynamicContent):
         """Refresh the content."""
         content_chains = self.get_content_chains(force_active=True)
 
-        while self.active:
-            if self.multiple_opaque or self.none_opaque:
-                self.pixels[:, :] = self.zeros()
+        try:
+            while self.active:
+                for content_id in set(content_chains).difference(self.content_ids):
+                    content_chains.pop(content_id).close()
 
-            for content in self.content:
-                try:
-                    # Trigger content refresh
-                    next(content_chains[content.id])
-                except StopIteration:
-                    if content.active:
-                        LOGGER.error(  # ruff:ignore[error-instead-of-exception]
-                            "Content %s stopped unexpectedly",
-                            content.id,
+                if self.multiple_opaque or self.none_opaque:
+                    self.pixels.fill(0)
+
+                for content in self.content:
+                    if content.id not in content_chains:
+                        content.active = True
+                        content.stop_reason = None
+                        content_chains[content.id] = content.chain_generators()
+
+                    try:
+                        next(content_chains[content.id])
+                    except StopIteration:
+                        if content.active:
+                            raise RuntimeError(
+                                f"Content {content.id} stopped unexpectedly",
+                            ) from None
+
+                        self.update_setting(
+                            "content",
+                            tuple(c for c in self.content if c is not content),
+                            invoke_callback=True,
                         )
-                        raise
+                        del content_chains[content.id]
+                        break
 
-                    # Remove inactive content from the list
-                    self.update_setting(
-                        "content",
-                        tuple(c for c in self.content if c.active),
-                        invoke_callback=True,
-                    )
+                    new_pixels = content.get_content()
 
-                    content_chains = self.get_content_chains()
-                except KeyError as err:
-                    # Double check that it's not the generator that's thrown the KeyError
-                    if (
-                        str(err).strip("\"'") == content.id
-                        and content.id not in content_chains
-                    ):
-                        content_chains = self.get_content_chains()
-                        break  # Soft reset - go back to the while loop
+                    if not self.multiple_opaque and content.IS_OPAQUE:
+                        # i.e. don't apply a mask
+                        self.pixels[
+                            content.y_pos : content.y_pos + content.height,
+                            content.x_pos : content.x_pos + content.width,
+                        ] = new_pixels
                     else:
-                        raise
+                        mask = np.any(new_pixels != (0, 0, 0, 0), axis=-1)
 
-                new_pixels = content.get_content()
+                        self.pixels[
+                            content.y_pos : content.y_pos + content.height,
+                            content.x_pos : content.x_pos + content.width,
+                        ][mask] = new_pixels[mask]
 
-                if not self.multiple_opaque and content.IS_OPAQUE:
-                    # i.e. don't apply a mask
-                    self.pixels[
-                        content.y_pos : content.y_pos + content.height,
-                        content.x_pos : content.x_pos + content.width,
-                    ] = new_pixels
-                else:
-                    mask = np.any(new_pixels != (0, 0, 0, 0), axis=-1)
-
-                    self.pixels[
-                        content.y_pos : content.y_pos + content.height,
-                        content.x_pos : content.x_pos + content.width,
-                    ][mask] = new_pixels[mask]
-
-            yield
+                yield
+        finally:
+            for chain in content_chains.values():
+                chain.close()
 
     def setting_update_callback(self, update_setting: str | None = None) -> None:
         """Change the opaque flag if necessary."""
