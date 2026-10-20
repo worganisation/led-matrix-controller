@@ -118,6 +118,7 @@ def test_running_rain_moves_into_combination_without_teardown(
 
     selected, _ = Matrix._get_next_content(matrix)
     assert selected is combination
+    assert isinstance(selected, Combination)
     assert rain in selected.content
     assert matrix._content_queue.empty()
 
