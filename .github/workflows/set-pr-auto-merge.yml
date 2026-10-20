@@ -15,8 +15,10 @@ concurrency:
 jobs:
   set-auto-merge:
     name: Set PR Auto Merge
-    if: ${{ !github.event.pull_request.draft }}
-    uses: worganisation/github-config-files/.github/workflows/__set-pr-auto-merge.yml@0.7.1
+    if: >-
+      !github.event.pull_request.draft &&
+      !startsWith(github.head_ref, 'renovate/')
+    uses: worganisation/github-config-files/.github/workflows/__set-pr-auto-merge.yml@0.8.2
     with:
       head-ref: ${{ github.head_ref }}
       pr-html-url: ${{ github.event.pull_request.html_url }}
