@@ -55,7 +55,7 @@ jobs:
         run: uv sync --locked --all-groups
 
       - name: Test
-        run: uv run --no-sync pytest --cov=led_matrix_controller --cov-report=xml
+        run: uv run --no-sync pytest --ignore=tests/benchmark --cov=led_matrix_controller --cov-report=xml
 
       - name: Check coverage
         env:
