@@ -75,3 +75,19 @@ def test_setting_metadata_does_not_construct_mqtt() -> None:
         ParameterSetting[float](icon="")
 
     client.assert_not_called()
+
+
+def test_current_value_cancels_pending_transition() -> None:
+    """An MQTT request for the displayed value replaces a different target."""
+    setting = make_setting()
+
+    with patch("content.setting.Thread"):
+        setting.on_message(1.0)
+        assert setting.target_value == pytest.approx(1.0)
+        setting.on_message(0.0)
+
+    setting._run_transition()
+
+    assert setting.target_value == pytest.approx(0.0)
+    assert setting.value == pytest.approx(0.0)
+    assert not setting._transition_running

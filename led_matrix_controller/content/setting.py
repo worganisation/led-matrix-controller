@@ -210,7 +210,10 @@ class Setting(Generic[S]):
                 )
                 return
 
-        if payload != self.value:
+        if payload != self.value or (
+            isinstance(self, TransitionableSettingMixin)
+            and getattr(self, "target_value", payload) != payload
+        ):
             self._set_value_from_payload(payload)
         elif payload != raw_payload:
             # e.g. out of bounds value was coerced to min/max
