@@ -1,0 +1,30 @@
+---
+name: Repair Matrix Runner Workspace
+
+on:
+  push:
+    branches:
+      - chore/mtrxpi-runner-cache-repair
+    paths:
+      - .github/workflows/repair-runner-workspace.yml
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: [self-hosted, linux, x64, cc, iac, opentofu]
+    timeout-minutes: 5
+    container:
+      image: python:3.11-slim-bookworm
+      volumes:
+        - /var/lib/github-actions-runner/worganisation-4/work/led-matrix-controller:/repair
+    steps:
+      - name: Restore checkout ownership
+        run: |
+          set -eu
+          owner=$(stat -c '%u:%g' /repair)
+          test "${owner%%:*}" != 0
+          find /repair -uid 0 -exec chown "${owner}" {} +
+          test "$(find /repair -uid 0 | wc -l)" -eq 0
+          echo 'Matrix checkout ownership restored for runner 4.'
