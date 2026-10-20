@@ -17,12 +17,12 @@ concurrency:
   group: codspeed-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   benchmarks:
     name: Run Benchmarks
+    permissions:
+      contents: read
+      id-token: write
     runs-on:
       - self-hosted
       - linux
@@ -69,7 +69,6 @@ jobs:
         with:
           mode: simulation
           cache-instruments: false
-          token: ${{ secrets.CODSPEED_TOKEN }}
           run: uv run --no-sync pytest tests/benchmark --codspeed -n 0 --no-cov
 
       - name: Restore workspace ownership
