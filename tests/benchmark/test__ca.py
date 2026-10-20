@@ -22,7 +22,9 @@ LIMITS = [50]
 
 @pytest.fixture
 def grid(
-    size: int, test_id: str, monkeypatch: pytest.MonkeyPatch,
+    size: int,
+    test_id: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Generator[RainingGrid, None, None]:
     """Stop each benchmark's simulation worker when the test finishes."""
     monkeypatch.setattr(const, "RNG", np.random.default_rng(0))
