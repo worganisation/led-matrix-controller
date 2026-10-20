@@ -33,20 +33,8 @@ jobs:
       - iac
       - opentofu
     timeout-minutes: 20
-    container:
-      image: python:3.11-slim-bookworm
-      volumes:
-        - /var/lib/github-actions-runner/worganisation-2/work/led-matrix-controller:/repair/runner-2
-        - /var/lib/github-actions-runner/worganisation-3/work/led-matrix-controller:/repair/runner-3
-        - /var/lib/github-actions-runner/worganisation-4/work/led-matrix-controller:/repair/runner-4
+    container: python:3.11-slim-bookworm
     steps:
-      - name: Repair container-created workspace files
-        run: |
-          for workspace in /repair/runner-*; do
-            owner=$(stat -c '%u:%g' "${workspace}")
-            find "${workspace}" -uid 0 -exec chown "${owner}" {} +
-          done
-
       - name: Restore workspace ownership
         run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"
 
@@ -75,6 +63,9 @@ jobs:
       - name: Check coverage
         env:
           BASE_REF: ${{ github.base_ref || 'main' }}
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: safe.directory
+          GIT_CONFIG_VALUE_0: ${{ github.workspace }}
         run: |
           uv run --no-sync diff-cover coverage.xml \
             --compare-branch="origin/${BASE_REF}" \
