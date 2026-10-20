@@ -32,7 +32,10 @@ jobs:
       - opentofu
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     timeout-minutes: 20
-    container: python:3.11-slim-bookworm
+    container:
+      image: python:3.11-slim-bookworm
+      # CodSpeed uses setarch to disable ASLR for its Valgrind simulation.
+      options: --security-opt seccomp=unconfined
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       UV_PROJECT_ENVIRONMENT: /tmp/mtrxpi-venv
