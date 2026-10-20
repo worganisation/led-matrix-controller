@@ -22,7 +22,7 @@ Use Python 3.11 and install the locked dependencies with `uv sync --locked`. PyA
 
 Unit tests and CodSpeed benchmarks have separate repository-owned workflows. Both install native dependencies in a Python 3.11 container. Unit tests exclude benchmarks; CodSpeed runs only `tests/benchmark`, without coverage or parallel test workers.
 
-Generate Home Assistant MQTT entity files from the content settings with `env PYTHONPATH=led_matrix_controller DEBUG_MODE=1 uv run python dev_tools/home_assistant/generate_mqtt_entities.py --output-dir /path/to/home-assistant/entities/mqtt`. The command loads the validated application configuration and content metadata without starting the display, audio capture, or MQTT connection. Review the generated changes in the Home Assistant repository before committing them.
+Home Assistant discovers the controller’s numeric, enum, boolean and text content settings through retained MQTT configurations under `homeassistant/`. The controller publishes these on broker connection and reconnection, and when Home Assistant announces `online` on `homeassistant/status`. Settings share the MtrxPi device and use stable `mtrxpi_<content>_<setting>` unique IDs and default entity IDs. Their command and state topics retain the setting values; discovery publishes only configuration, so connecting does not replace saved values with startup defaults. Home Assistant’s MQTT integration must have discovery enabled with its default prefix and birth topic.
 
 ## Content
 

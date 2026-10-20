@@ -65,6 +65,7 @@ class MqttClient(metaclass=Singleton):
 
         self._retain = retain
         self._topics: set[str] = set()
+        self._connect_callbacks: list[Callable[[], None]] = []
 
         self._connection_failures = 0
 
@@ -99,6 +100,13 @@ class MqttClient(metaclass=Singleton):
 
         if self._topics:
             LOGGER.info("Restored %d MQTT subscriptions", len(self._topics))
+
+        for callback in tuple(self._connect_callbacks):
+            callback()
+
+    def add_connect_callback(self, callback: Callable[[], None]) -> None:
+        """Run a callback after subscriptions are restored on each successful connection."""
+        self._connect_callbacks.append(callback)
 
     def _on_connect_fail(
         self,

@@ -16,8 +16,10 @@ from content import (
     RainingGrid,
     Sorter,
 )
+from content.dynamic_content import DynamicContent
 from models import Matrix
 from utils import MqttClient
+from utils.mqtt_discovery import register_discovery
 from wg_utilities.loggers import get_streaming_logger
 
 LOGGER = get_streaming_logger(__name__)
@@ -62,6 +64,11 @@ def main() -> None:
         content_works_with=works_with,
     ).register_content(
         *library,
+    )
+
+    register_discovery(
+        mqtt_client,
+        (content for content in library if isinstance(content, DynamicContent)),
     )
 
     mqtt_client.loop_forever()
