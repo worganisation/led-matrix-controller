@@ -7,8 +7,7 @@ license = "MIT"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-  "httpcore>=1.0.7,<2.0.0",
-  "httpx>=0.28.1,<0.29.0",
+  "aiohttp>=3.12,<4.0",
   "numpy==2.0.1",
   "paho-mqtt>=2.1.0,<3.0.0",
   "pillow>=11.2.1,<12.0.0",
@@ -216,4 +215,4 @@ sort_by_size = true
 paths = ["led_matrix_controller"]
 deps-file = "pyproject.toml"
 sections = ["project.dependencies"]
-exclude-deps = ["paho-mqtt", "pillow", "httpcore"]
+exclude-deps = ["paho-mqtt", "pillow"]
