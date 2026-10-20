@@ -106,6 +106,9 @@ class StopType(Enum):
     item
     """
 
+    COMBINED = auto()
+    """Content is continuing inside a queued combination."""
+
 
 ContentType = TypeVar("ContentType", GridView, mtrx.Canvas)
 
