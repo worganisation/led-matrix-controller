@@ -10,13 +10,31 @@ import pytest
 from content import RainingGrid
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator
 
     from content.automaton import MaskGen
     from pytest_codspeed import BenchmarkFixture
 
 SIZES = [16]
 LIMITS = [50]
+
+
+@pytest.fixture
+def grid(size: int, test_id: str) -> Generator[RainingGrid, None, None]:
+    """Stop each benchmark's simulation worker when the test finishes."""
+    simulation = RainingGrid(
+        height=size,
+        width=size,
+        rain_chance=0.025,
+        rain_speed=1,
+        splash_speed=1,
+        id_override=test_id,
+    )
+
+    yield simulation
+
+    if hasattr(simulation, "_rules_thread"):
+        simulation._stop_rules_thread()
 
 
 @pytest.mark.parametrize(
@@ -36,19 +54,10 @@ LIMITS = [50]
 )
 def test_raining_grid_simulation(
     benchmark: BenchmarkFixture,
-    size: int,
+    grid: RainingGrid,
     limit: int,
-    test_id: str,
 ) -> None:
     """Benchmark the CA."""
-    grid = RainingGrid(
-        height=size,
-        width=size,
-        rain_chance=0.025,
-        rain_speed=1,
-        splash_speed=1,
-        id_override=test_id,
-    )
 
     @benchmark
     def bench() -> None:
@@ -76,21 +85,13 @@ def test_raining_grid_simulation(
 )
 def test_rules(
     benchmark: BenchmarkFixture,
+    grid: RainingGrid,
     size: int,
     limit: int,
     rule: Callable[..., MaskGen],
     test_id: str,
 ) -> None:
     """Test/benchmark each individual rule."""
-    grid = RainingGrid(
-        height=size,
-        width=size,
-        rain_chance=0.025,
-        rain_speed=1,
-        splash_speed=1,
-        id_override=test_id,
-    )
-
     # Discard the first `size` frames so all rules are effective (e.g. splashing)
     for _ in islice(grid, size + 10):
         pass
