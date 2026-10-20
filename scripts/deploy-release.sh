@@ -7,7 +7,7 @@ if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+if [[ -n "$(git status --porcelain --untracked-files=normal --ignore-submodules=untracked)" ]]; then
   echo "Working tree is dirty; preserve local changes before deploying" >&2
   exit 1
 fi
