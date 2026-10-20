@@ -61,6 +61,9 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked --all-groups
 
+      - name: Trust checkout for benchmark metadata
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
       - name: Run Benchmarks
         uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
