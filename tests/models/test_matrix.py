@@ -546,3 +546,26 @@ def test_existing_combination_reprioritizes_without_duplicate_members() -> None:
     assert result is combination
     assert combination.priority == pytest.approx(0.0)
     combination.update_setting.assert_not_called()
+
+
+def test_render_progress_is_published_only_after_a_frame() -> None:
+    """Report render freshness without publishing at the display frame rate."""
+    matrix = Mock(spec=Matrix)
+    matrix.tick = 0
+    matrix._last_progress_publish = 0.0
+    matrix.PROGRESS_PUBLISH_INTERVAL = Matrix.PROGRESS_PUBLISH_INTERVAL
+    matrix.tick_condition = Mock()
+    matrix.tick_condition.acquire.return_value = True
+    matrix.canvas = Mock()
+    matrix.matrix = Mock()
+    matrix.mqtt_client = Mock()
+    matrix.mqtt_topic.return_value = "/test/matrix/render-progress"
+
+    with patch("models.matrix.monotonic", side_effect=[10.0, 10.1, 15.0]):
+        Matrix.swap_canvas(matrix)
+        Matrix.swap_canvas(matrix)
+        Matrix.swap_canvas(matrix)
+
+    assert matrix.tick == 3
+    assert matrix.mqtt_client.publish.call_count == 2
+    assert '"frame": 3' in matrix.mqtt_client.publish.call_args.kwargs["payload"]

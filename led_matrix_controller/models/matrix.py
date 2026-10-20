@@ -11,6 +11,7 @@ from os import getpid, kill
 from queue import Empty, PriorityQueue
 from signal import SIGTERM
 from threading import Condition, RLock, Thread
+from time import monotonic, time
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
@@ -245,6 +246,8 @@ class Matrix:
         # "pwm_dither_bits": 1,  # ruff:ignore[commented-out-code]
     }
 
+    PROGRESS_PUBLISH_INTERVAL: ClassVar[float] = 5.0
+
     canvas: mtrx.Canvas
     tick_condition: Condition
 
@@ -310,6 +313,7 @@ class Matrix:
             None
         )
 
+        self._last_progress_publish = 0.0
         self.tick: int = 0
         self.tick_condition = Condition()
 
@@ -797,6 +801,16 @@ class Matrix:
         self.canvas = self.matrix.SwapOnVSync(content or self.canvas)
 
         self.tick += 1
+
+        if (
+            now := monotonic()
+        ) - self._last_progress_publish >= self.PROGRESS_PUBLISH_INTERVAL:
+            self.mqtt_client.publish(
+                topic=self.mqtt_topic("render-progress"),
+                payload=dumps({"frame": self.tick, "rendered_at": time()}),
+                retain=True,
+            )
+            self._last_progress_publish = now
 
         if self.tick_condition.acquire(timeout=const.TICK_LENGTH):
             try:
