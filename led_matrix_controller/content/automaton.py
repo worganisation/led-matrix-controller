@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from abc import ABC
 from collections.abc import Callable
 from copy import deepcopy
@@ -11,8 +10,8 @@ from enum import IntEnum
 from functools import lru_cache, wraps
 from itertools import islice
 from os import getenv
-from queue import Queue
-from threading import Thread
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -61,7 +60,7 @@ RuleTuple = tuple[
     Callable[["Automaton"], bool],
     float,
 ]
-FrameRuleSet = tuple[RuleTuple, ...]
+RuleSchedule = tuple[tuple[int, RuleTuple], ...]
 
 QUEUE_SIZE: Final[int] = int(getenv("AUTOMATON_QUEUE_SIZE", "100"))
 
@@ -78,11 +77,13 @@ class Automaton(DynamicContent, ABC):
     TRACK_STATES_DURATION: ClassVar[tuple[int, ...]] = ()
 
     frame_index: int = field(init=False, default=-1)
-    frame_rulesets: tuple[FrameRuleSet, ...] = field(init=False, repr=False)
+    _rule_schedule: RuleSchedule = field(init=False, repr=False)
     rules: list[Rule] = field(init=False, repr=False)
 
     _rules_thread: Thread = field(init=False, repr=False)
     mask_queue: Queue[GridView] = field(init=False, repr=False)
+    _rules_stop: Event = field(init=False, default_factory=Event, repr=False)
+    _rules_error: Exception | None = field(init=False, default=None, repr=False)
 
     durations: GridView = field(init=False, repr=False)
 
@@ -124,21 +125,7 @@ class Automaton(DynamicContent, ABC):
         self.mask_queue = Queue(maxsize=QUEUE_SIZE)
 
     def setting_update_callback(self, update_setting: str | None = None) -> None:
-        """Pre-calculate the a sequence of mask generators for each frame.
-
-        The total number of frames (and thus rulesets) is the least common multiple of the frequencies of the
-        rules. If the lowest frequency is >1, then some (e.g. every other) frames will have no rules applied.
-        """
-        rule_freqs = {
-            r.frequency for r in self.rules if isinstance(r.frequency, int | float)
-        } | {
-            setting.value
-            for setting in self.settings.values()
-            if isinstance(setting, FrequencySetting)
-        }
-
-        ruleset_count = math.lcm(*rule_freqs)
-
+        """Publish a bounded snapshot of rule frequencies and generators."""
         if update_setting:
             for rule in self.rules:
                 if update_setting in rule.consumed_parameters:
@@ -146,16 +133,8 @@ class Automaton(DynamicContent, ABC):
 
         Rule.clear_cached_rule_tuples()
 
-        self.frame_rulesets = tuple(
-            tuple(rule.rule_tuple(self) for rule in self.rules if rule.active_on_frame(i))
-            for i in range(ruleset_count)
-        )
-
-        LOGGER.info(
-            "Mask Generator loop re-generated. New length: %i; largest ruleset: %i; empty rulesets: %i",
-            len(self.frame_rulesets),
-            max(len(loop) for loop in self.frame_rulesets),
-            sum(not loop for loop in self.frame_rulesets),
+        self._rule_schedule = tuple(
+            (rule.current_frequency, rule.rule_tuple(self)) for rule in self.rules
         )
 
     @classmethod
@@ -239,97 +218,111 @@ class Automaton(DynamicContent, ABC):
 
     def refresh_content(self) -> Generator[None, None, None]:
         """Generate the frames of the automaton."""
-        self.pixels[:, :] = self.mask_queue.get()
+        while self.active:
+            if self._rules_error is not None:
+                raise RuntimeError(
+                    "Automaton simulation worker failed",
+                ) from self._rules_error
 
-        self.frame_index += 1
+            try:
+                frame = self.mask_queue.get(timeout=0.1)
+            except Empty:
+                if not self.active:
+                    return
 
-        yield
+                if not self._rules_thread.is_alive():
+                    raise RuntimeError(
+                        "Automaton simulation worker stopped unexpectedly",
+                    ) from self._rules_error
+
+                continue
+
+            self.pixels[:, :] = frame
+            self.frame_index += 1
+            yield
+            return
 
     def _rules_worker(self) -> None:
-        if not hasattr(self, "durations"):
-            self.durations = self.zeros()
+        """Produce frames until stopped, retaining failures for the rendering thread."""
+        try:
+            self._produce_frames()
+        except Exception as error:  # ruff: ignore[blind-except] — Transfer worker failures to the rendering thread.
+            self._rules_error = error
 
+    def _produce_frames(self) -> None:
         pixels = self.pixels.copy()
-        prev_pixels = self.pixels.copy()
+        prev_pixels = pixels.copy()
+        frame = self.frame_index + 1
 
-        while self.active:
-            for ruleset in self.frame_rulesets:
-                # Generate masks
-                masks = tuple(
-                    (target_slice, mask_gen(pixels), state, rand_mult)
-                    for target_slice, mask_gen, state, predicate, rand_mult in ruleset
-                    if predicate(self)
-                )
+        while self.active and not self._rules_stop.is_set():
+            masks = tuple(
+                (target_slice, mask_gen(pixels), state, rand_mult)
+                for frequency, (
+                    target_slice,
+                    mask_gen,
+                    state,
+                    predicate,
+                    rand_mult,
+                ) in self._rule_schedule
+                if frequency and frame % frequency == 0 and predicate(self)
+            )
 
-                # Apply masks
-                for target_slice, mask, new_state, rand_mult in masks:
-                    if rand_mult < 1:
-                        mask &= const.RNG.random(mask.shape) < rand_mult  # ruff:ignore[redefined-loop-name]
+            for target_slice, mask, new_state, rand_mult in masks:
+                if rand_mult < 1:
+                    mask &= const.RNG.random(mask.shape) < rand_mult  # ruff:ignore[redefined-loop-name]
 
-                    if isinstance(new_state, int):
-                        pixels[target_slice][mask] = new_state
-                    else:
-                        # A tuple of ints; distribute them randomly
-                        pixels[target_slice][mask] = const.RNG.choice(
-                            new_state,
-                            size=mask.sum(),
-                        )
+                if isinstance(new_state, int):
+                    pixels[target_slice][mask] = new_state
+                else:
+                    pixels[target_slice][mask] = const.RNG.choice(
+                        new_state,
+                        size=mask.sum(),
+                    )
 
-                if self.TRACK_STATES_DURATION:
-                    # Calculate state durations
-                    tracked_states_mask = np.isin(pixels, self.TRACK_STATES_DURATION)
-                    same_state_mask = (pixels == prev_pixels) & tracked_states_mask
-                    new_tracked_state_mask = (pixels != prev_pixels) & tracked_states_mask
+            if self.TRACK_STATES_DURATION:
+                tracked_states_mask = np.isin(pixels, self.TRACK_STATES_DURATION)
+                same_state_mask = (pixels == prev_pixels) & tracked_states_mask
+                new_tracked_state_mask = (pixels != prev_pixels) & tracked_states_mask
 
-                    self.durations[same_state_mask] += 1
-                    self.durations[new_tracked_state_mask] = 1
-                    self.durations[~tracked_states_mask] = 0
+                self.durations[same_state_mask] += 1
+                self.durations[new_tracked_state_mask] = 1
+                self.durations[~tracked_states_mask] = 0
 
-                # Add new frame to queue
-                self.mask_queue.put(prev_pixels := pixels.copy())
+            prev_pixels = pixels.copy()
+            while self.active and not self._rules_stop.is_set():
+                try:
+                    self.mask_queue.put(prev_pixels, timeout=0.1)
+                except Full:
+                    continue
 
-        LOGGER.debug("Rules worker stopped")
+                break
+
+            frame += 1
 
     def _start_rules_thread(self) -> None:
-        """Start the rules thread. If it has already been started, do nothing."""
-        start_new = False
-
-        if not hasattr(self, "_rules_thread"):
-            start_new = True
-        elif self._rules_thread.is_alive():
-            LOGGER.debug("Rules thread already running")
-        else:
-            try:
-                self._rules_thread.start()
-                LOGGER.info("Started existing rules thread")
-            except RuntimeError as err:
-                if str(err) != "threads can only be started once":
-                    raise
-
-                start_new = True
-
-        if start_new:
-            self._rules_thread = Thread(target=self._rules_worker)
-            self._rules_thread.start()
-
-            LOGGER.info("Started new rules thread")
+        """Start a simulation worker, joining any previous run first."""
+        self._stop_rules_thread()
+        self.active = True
+        self._rules_stop.clear()
+        self._rules_error = None
+        self._rules_thread = Thread(target=self._rules_worker)
+        self._rules_thread.start()
 
     def _stop_rules_thread(self) -> None:
+        """Stop the worker without waiting for a consumer to drain its queue."""
         self.active = False
+        self._rules_stop.set()
 
-        # Clear the backlog of pending `put` calls - clearing the queue is not sufficient
-        while self._rules_thread.is_alive() and not self.mask_queue.empty():
-            self.mask_queue.get()
+        if hasattr(self, "_rules_thread"):
+            self._rules_thread.join(timeout=1)
+            if self._rules_thread.is_alive():
+                raise RuntimeError("Automaton simulation worker did not stop")
 
-        if not self.mask_queue.empty():
-            self.mask_queue.queue.clear()
-
-        self._rules_thread.join(timeout=1)
-
-        if self._rules_thread.is_alive():
-            LOGGER.warning("Rules thread did not stop in time")
-        else:
-            LOGGER.debug("Rules thread stopped")
+        while True:
+            try:
+                self.mask_queue.get_nowait()
+            except Empty:
+                break
 
     @property
     def str_repr(self) -> str:
@@ -384,8 +377,11 @@ class Automaton(DynamicContent, ABC):
 
         self._start_rules_thread()
 
-        while self.active:
-            yield from self.refresh_content()
+        try:
+            while self.active:
+                yield from self.refresh_content()
+        finally:
+            self._stop_rules_thread()
 
     def __hash__(self) -> int:
         """Return the hash of the automaton."""
