@@ -589,7 +589,8 @@ def test_alert_during_cancelled_child_teardown_resumes_only_requested_children(
     matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
     matrix._attempt_combination.side_effect = partial(Matrix._attempt_combination, matrix)
     matrix._interrupt_for_queued_content.side_effect = partial(
-        Matrix._interrupt_for_queued_content, matrix,
+        Matrix._interrupt_for_queued_content,
+        matrix,
     )
     rain = Mock(spec=RainingGrid, id="rain", priority=10.0, active=True, stop_reason=None)
     clock = Mock(spec=Clock, id="clock", priority=15.0, active=True, stop_reason=None)
@@ -611,7 +612,8 @@ def test_alert_during_cancelled_child_teardown_resumes_only_requested_children(
     def drain() -> Iterator[None]:
         yield
         Matrix._queue_content_message(
-            matrix, {"id": "alert", "priority": 1, "parameters": parameters},
+            matrix,
+            {"id": "alert", "priority": 1, "parameters": parameters},
         )
         yield
 
@@ -637,7 +639,8 @@ def test_clock_request_during_cancelled_rain_teardown_does_not_recreate_rain(
     matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
     matrix._attempt_combination.side_effect = partial(Matrix._attempt_combination, matrix)
     matrix._interrupt_for_queued_content.side_effect = partial(
-        Matrix._interrupt_for_queued_content, matrix,
+        Matrix._interrupt_for_queued_content,
+        matrix,
     )
     rain = Mock(spec=RainingGrid, id="rain", priority=10.0, active=True, stop_reason=None)
     rain.stop.side_effect = partial(ContentBase.stop, rain)
@@ -650,7 +653,8 @@ def test_clock_request_during_cancelled_rain_teardown_does_not_recreate_rain(
     def teardown() -> Iterator[None]:
         yield
         Matrix._queue_content_message(
-            matrix, {"id": "clock", "priority": 15, "parameters": parameters},
+            matrix,
+            {"id": "clock", "priority": 15, "parameters": parameters},
         )
         yield
 
@@ -674,7 +678,10 @@ def test_stale_queued_combination_dissolves_before_resumption(
     rain = Mock(spec=RainingGrid, id="rain", priority=10.0, stop_reason=None)
     clock = Mock(spec=Clock, id="clock", priority=15.0, stop_reason=None)
     combination = Mock(
-        spec=Combination, id="combination", priority=10.0, content=(rain, clock),
+        spec=Combination,
+        id="combination",
+        priority=10.0,
+        content=(rain, clock),
     )
     matrix._content_queue.add(combination, cast("ContentParameters", {}))
     ContentBase.stop(rain, reason)
@@ -719,7 +726,8 @@ def test_explicit_request_can_restart_cancelled_content(mqtt_client: MqttClient)
     parameters = cast("ContentParameters", {})
 
     Matrix._queue_content_message(
-        matrix, {"id": "alert", "priority": 1, "parameters": parameters},
+        matrix,
+        {"id": "alert", "priority": 1, "parameters": parameters},
     )
 
     assert Matrix._get_next_content(matrix)[0] is alert
