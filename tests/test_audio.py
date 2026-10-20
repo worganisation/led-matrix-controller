@@ -13,8 +13,10 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from content.audio_visualiser import AudioVisualiser
+from paho.mqtt.client import MQTTMessage
 from scipy.fft import rfftfreq
 from utils import helpers
+from utils.mqtt import MqttClient
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -227,3 +229,35 @@ def test_interrupted_write_invalidates_frame(
         with pytest.raises(OSError, match="interrupted"):
             frames.write(np.zeros(221), 441, 44100)
     assert not frames.read(np.zeros(221), 441, 44100)
+
+
+def test_plain_text_current_content_dispatch(
+    processor_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dispatch the actual matrix wire format through the real MQTT wrapper."""
+    wrapper = object.__new__(MqttClient)
+    wrapper._client = Mock()
+    wrapper._topics = set()
+    monkeypatch.setattr(processor_module, "MqttClient", lambda **_: wrapper)
+    processor = processor_module.AudioProcessor()
+    callbacks = {
+        call.args[0]: call.args[1]
+        for call in wrapper._client.message_callback_add.call_args_list
+    }
+
+    def dispatch(topic: str, payload: bytes) -> None:
+        message = MQTTMessage(topic=topic.encode())
+        message.payload = payload
+        callbacks[topic](wrapper._client, None, message)
+
+    dispatch(processor_module.CURRENT_CONTENT_TOPIC, b"audio-visualiser")
+    assert processor.active
+    dispatch(processor_module.CURRENT_CONTENT_TOPIC, b"combination")
+    assert not processor.active
+    dispatch(processor_module.COMBO_CONTENT_TOPIC, b'["audio-visualiser", "clock"]')
+    assert processor.active
+    dispatch(processor_module.CURRENT_CONTENT_TOPIC, b"")
+    assert processor.current_content is None
+    assert not processor.active
+    assert processor_module.CURRENT_CONTENT_TOPIC in wrapper._topics

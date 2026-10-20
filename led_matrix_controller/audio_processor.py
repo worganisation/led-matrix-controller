@@ -58,7 +58,7 @@ class AudioProcessor:
         self.last_magnitude_update = time.monotonic()
         self._last_telemetry = 0.0
         self.mqtt = MqttClient(connect=True)
-        self.mqtt.add_topic_callback(
+        self.mqtt.add_text_topic_callback(
             CURRENT_CONTENT_TOPIC,
             self._on_current_content_message,
         )

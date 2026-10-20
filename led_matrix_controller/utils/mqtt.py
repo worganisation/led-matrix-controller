@@ -172,10 +172,34 @@ class MqttClient(metaclass=Singleton):
 
             callback(payload)
 
-        self._topics.add(topic)
-        self._client.subscribe(topic)
-        self._client.message_callback_add(topic, _cb)
+        self._register_topic_callback(topic, _cb)
 
+    def add_text_topic_callback(
+        self,
+        topic: str,
+        callback: Callable[[str | None], None],
+    ) -> None:
+        """Subscribe to plain-text state, mapping a cleared retained value to None."""
+
+        def _cb(_: mqtt.Client, __: object, msg: mqtt.MQTTMessage) -> None:
+            try:
+                payload = msg.payload.decode("utf-8")
+            except UnicodeDecodeError:
+                LOGGER.exception("Failed to decode text payload on %s", topic)
+                return
+
+            callback(payload or None)
+
+        self._register_topic_callback(topic, _cb)
+
+    def _register_topic_callback(
+        self,
+        topic: str,
+        callback: Callable[[mqtt.Client, object, mqtt.MQTTMessage], None],
+    ) -> None:
+        self._topics.add(topic)
+        self._client.message_callback_add(topic, callback)
+        self._client.subscribe(topic)
         LOGGER.info("Added callback `%s` for topic: %s", callback.__qualname__, topic)
 
     def loop_forever(self) -> None:
