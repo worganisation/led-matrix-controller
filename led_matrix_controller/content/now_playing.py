@@ -6,6 +6,9 @@ import asyncio
 from dataclasses import dataclass, field
 from hashlib import sha256
 from io import BytesIO
+from pathlib import (
+    Path,  # noqa: TC003 — DynamicContent resolves these annotations at runtime.
+)
 from re import Pattern
 from re import compile as compile_regex
 from threading import Thread
@@ -24,7 +27,6 @@ from .setting import ParameterSetting
 
 if TYPE_CHECKING:
     from collections.abc import Generator
-    from pathlib import Path
 
     from numpy.typing import DTypeLike, NDArray
 
