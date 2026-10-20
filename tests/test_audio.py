@@ -78,7 +78,7 @@ def test_stale_frame_is_rejected(
     """An exited producer does not leave a permanently lit spectrum."""
     frames.write(np.ones(221), 441, 44100)
     now = time.monotonic()
-    monkeypatch.setattr(helpers.time, "monotonic", lambda: now + 2)
+    monkeypatch.setattr("utils.helpers.time.monotonic", lambda: now + 2)
     assert not frames.read(np.zeros(221), 441, 44100)
 
 
@@ -225,7 +225,9 @@ def test_interrupted_write_invalidates_frame(
     """A producer failure during the copy cannot expose a partially written frame."""
     frames.write(np.ones(221), 441, 44100)
     with monkeypatch.context() as patch:
-        patch.setattr(helpers.np, "copyto", Mock(side_effect=OSError("copy interrupted")))
+        patch.setattr(
+            "utils.helpers.np.copyto", Mock(side_effect=OSError("copy interrupted"))
+        )
         with pytest.raises(OSError, match="interrupted"):
             frames.write(np.zeros(221), 441, 44100)
     assert not frames.read(np.zeros(221), 441, 44100)
