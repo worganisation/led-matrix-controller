@@ -364,8 +364,7 @@ class Matrix:
             )
 
             if combine_with.active:
-                # Force-stop the current content, it will be replaced by the combination
-                combine_with.stop(StopType.CANCEL, reset_priority=False)
+                combine_with.stop(StopType.COMBINED, reset_priority=False)
 
             return combo_content.update_setting(
                 "content",
@@ -500,10 +499,14 @@ class Matrix:
                         c.priority,
                     )
 
-        elif self.current_content.stop_reason != StopType.PRIORITY and (
-            teardown_gen := self.current_content.teardown()
+        elif (
+            self.current_content.stop_reason
+            not in {
+                StopType.PRIORITY,
+                StopType.COMBINED,  # Preserve the content's state for reuse in the combination.
+            }
+            and (teardown_gen := self.current_content.teardown())
         ):
-            # Only run teardown if the stop isn't due to higher priority content
             LOGGER.info(
                 "Running teardown sequence for %s",
                 self.current_content.id,
@@ -519,7 +522,7 @@ class Matrix:
         if (
             self.current_content.priority != const.MAX_PRIORITY
             and self.current_content.stop_reason
-            not in {StopType.CANCEL, StopType.EXPIRED}
+            not in {StopType.CANCEL, StopType.EXPIRED, StopType.COMBINED}
         ):
             # This is checking that the next content isn't a combination that contains
             # the current content (i.e. is replacing it)
@@ -600,6 +603,7 @@ class Matrix:
         # Lower value = higher priority
         if (
             self.current_content is not None
+            and self.current_content.active  # Preserve a stop reason already set for handoff.
             and self.current_content.priority is not None
             and target_content.priority is not None
             and target_content.priority < self.current_content.priority
