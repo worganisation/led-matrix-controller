@@ -20,13 +20,55 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   unit-tests:
     name: Unit Tests
-    uses: worganisation/github-config-files/.github/workflows/__unit-tests.yml@0.8.7
-    with:
-      python-version: '3.11'
-      source-dir: led_matrix_controller
-    secrets: inherit
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cc
+      - iac
+      - opentofu
+    timeout-minutes: 20
+    container: python:3.11-slim-bookworm
+    steps:
+      - name: Install native build dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential git portaudio19-dev
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          cache-local-path: ${{ github.workspace }}/.uv-cache
+
+      - name: Install Python dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Test
+        run: uv run --no-sync pytest --cov=led_matrix_controller --cov-report=xml
+
+      - name: Check coverage
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          uv run --no-sync diff-cover coverage.xml \
+            --config-file pyproject.toml \
+            --compare-branch="origin/${BASE_REF}" \
+            --markdown-report .coverage-report.md
+
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          if [ -f .coverage-report.md ]; then
+            cat .coverage-report.md >> "${GITHUB_STEP_SUMMARY}"
+          fi
