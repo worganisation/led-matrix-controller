@@ -21,10 +21,6 @@ HOSTNAME: Final[str] = SETTINGS.hostname_override
 
 IS_PI = gethostname().lower() == "mtrxpi" and platform != "darwin"
 
-FONT_WIDTH: Final[int] = 5
-FONT_HEIGHT: Final[int] = 7
-SCROLL_INCREMENT_DISTANCE: Final[int] = 2 * FONT_WIDTH
-
 BOOLEANS: Final[np.typing.NDArray[np.bool_]] = np.array([False, True], dtype=np.bool_)
 RNG = np.random.default_rng(SETTINGS.rng_seed)
 
