@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from functools import partial
+from signal import SIGTERM
+from threading import Event, RLock, Thread
 from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock, patch
 
@@ -13,6 +15,8 @@ from models.matrix import ContentQueue, Matrix
 from utils import const
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from models.matrix import ContentParameters
     from utils.mqtt import MqttClient
 
@@ -25,6 +29,15 @@ def test_alert_precedes_queued_combination(
 ) -> None:
     """Select the alert ahead of a combination and preserve the background queue."""
     matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content,
+        matrix,
+    )
+    matrix._queue_content_message.side_effect = partial(
+        Matrix._queue_content_message,
+        matrix,
+    )
     matrix._attempt_combination.side_effect = partial(Matrix._attempt_combination, matrix)
     matrix._content_queue = ContentQueue(mqtt_client, "/test/content-queue")
 
@@ -58,6 +71,15 @@ def test_running_rain_moves_into_combination_without_teardown(
 ) -> None:
     """Reuse running rain immediately, including when an alert precedes the combination."""
     matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content,
+        matrix,
+    )
+    matrix._queue_content_message.side_effect = partial(
+        Matrix._queue_content_message,
+        matrix,
+    )
     matrix._attempt_combination.side_effect = partial(Matrix._attempt_combination, matrix)
     matrix._content_works_with.side_effect = partial(Matrix._content_works_with, matrix)
     matrix._get_next_content.side_effect = partial(Matrix._get_next_content, matrix)
@@ -74,7 +96,17 @@ def test_running_rain_moves_into_combination_without_teardown(
         content=(clock, rain),
         content_ids=("clock", "raining-grid"),
     )
-    combination.update_setting.return_value = combination
+    combination.content = ()
+
+    def update_combination(
+        *_: object,
+        value: tuple[Clock, RainingGrid],
+        **__: object,
+    ) -> Combination:
+        combination.content = value
+        return combination
+
+    combination.update_setting.side_effect = update_combination
     matrix._sort_content.return_value = (clock, rain)
     matrix.current_content = rain
     parameters = cast("ContentParameters", {})
@@ -130,6 +162,15 @@ def test_stopped_rain_still_runs_teardown(
 ) -> None:
     """Drain rain when it is actually cancelled or expires."""
     matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content,
+        matrix,
+    )
+    matrix._queue_content_message.side_effect = partial(
+        Matrix._queue_content_message,
+        matrix,
+    )
     matrix._content_queue = ContentQueue(mqtt_client, "/test/content-queue")
     rain = Mock(spec=RainingGrid, id="raining-grid", priority=10.0, active=True)
     rain.teardown.return_value = iter((None, None))
@@ -149,6 +190,15 @@ def test_stopped_rain_still_runs_teardown(
 def test_alert_interrupts_active_rain_without_teardown(mqtt_client: MqttClient) -> None:
     """Interrupt active rain for a doorbell alert and resume it afterward."""
     matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content,
+        matrix,
+    )
+    matrix._queue_content_message.side_effect = partial(
+        Matrix._queue_content_message,
+        matrix,
+    )
     matrix._attempt_combination.side_effect = partial(Matrix._attempt_combination, matrix)
     matrix._get_next_content.side_effect = partial(Matrix._get_next_content, matrix)
     matrix._content_queue = ContentQueue(mqtt_client, "/test/content-queue")
@@ -176,3 +226,323 @@ def test_alert_interrupts_active_rain_without_teardown(mqtt_client: MqttClient) 
     resumed, _ = Matrix._get_next_content(matrix)
     assert resumed is rain
     assert matrix._content_queue.empty()
+
+
+def test_queue_removal_preserves_priority_order(mqtt_client: MqttClient) -> None:
+    """Removing the heap root cannot move a later request ahead of an earlier one."""
+    queue = ContentQueue(mqtt_client, "/test/queue")
+    contents = [
+        Mock(spec=GifViewer, id=str(priority), priority=float(priority))
+        for priority in (1, 5, 2, 6, 7, 3, 4)
+    ]
+    parameters = cast("ContentParameters", {})
+    for content in contents:
+        queue.add(content, parameters)
+
+    queue.remove(contents[0], parameters)
+
+    assert [queue.get()[0] for _ in range(queue.qsize())] == [2, 3, 4, 5, 6, 7]
+
+
+def test_tied_priorities_are_fifo_and_all_visible(mqtt_client: MqttClient) -> None:
+    """Unorderable content objects can share a priority without losing telemetry."""
+    queue = ContentQueue(mqtt_client, "/test/queue")
+    first = Mock(spec=GifViewer, id="first", priority=1.0)
+    second = Mock(spec=GifViewer, id="second", priority=1.0)
+    parameters = cast("ContentParameters", {})
+    queue.add(first, parameters)
+    queue.add(second, parameters)
+
+    assert queue.mqtt_attributes == {
+        "1.000": {"id": "first", "parameters": parameters},
+        "1.000:2": {"id": "second", "parameters": parameters},
+    }
+    cast("Mock", mqtt_client.publish).assert_called_with(
+        topic="/test/queue/state",
+        payload=2,
+        retain=True,
+    )
+    assert queue.get()[1] is first
+    assert queue.get()[1] is second
+
+
+def test_queue_replaces_a_reprioritized_request(mqtt_client: MqttClient) -> None:
+    """Reprioritizing a queued singleton updates its key and parameters once."""
+    queue = ContentQueue(mqtt_client, "/test/queue")
+    content = Mock(spec=GifViewer, id="alert", priority=10.0)
+    other = Mock(spec=GifViewer, id="other", priority=5.0)
+    parameters = cast("ContentParameters", {})
+    replacement = cast("ContentParameters", {"source": "new"})
+    queue.add(content, parameters)
+    queue.add(other, parameters)
+    snapshot = iter(queue)
+    content.priority = 1.0
+
+    assert "10.000" in queue.mqtt_attributes
+    queue.add(content, replacement)
+
+    assert list(snapshot) == [(5.0, other, parameters), (10.0, content, parameters)]
+    assert queue.qsize() == 2
+    assert queue.get() == (1.0, content, replacement)
+    assert queue.get()[1] is other
+
+
+def test_preview_does_not_combine_or_mutate(mqtt_client: MqttClient) -> None:
+    """Previewing compatible content leaves both instances and the queue untouched."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    rain = Mock(spec=RainingGrid, id="rain", priority=10.0, active=True)
+    clock = Mock(spec=Clock, id="clock", priority=15.0, active=True)
+    parameters = cast("ContentParameters", {})
+    matrix._content_queue.add(rain, parameters)
+    matrix._content_queue.add(clock, parameters)
+
+    assert Matrix._get_next_content(matrix, dry_run=True) == (rain, parameters)
+    matrix._attempt_combination.assert_not_called()
+    assert matrix._content_queue.qsize() == 2
+    rain.stop.assert_not_called()
+    clock.stop.assert_not_called()
+
+
+def test_interrupted_content_can_resume_an_empty_queue(mqtt_client: MqttClient) -> None:
+    """An interruption whose request was withdrawn still resumes the background."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content,
+        matrix,
+    )
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    rain = Mock(
+        spec=RainingGrid,
+        id="rain",
+        priority=10.0,
+        active=False,
+        stop_reason=StopType.PRIORITY,
+    )
+    matrix.current_content = rain
+    parameters = cast("ContentParameters", {})
+
+    Matrix._handle_content_stop(matrix, parameters, Mock())
+
+    assert matrix._content_queue.get() == (10.0, rain, parameters)
+    rain.teardown.assert_not_called()
+
+
+def test_zero_priority_is_a_valid_request(mqtt_client: MqttClient) -> None:
+    """Priority zero queues an alert; only null requests cancellation."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    matrix.current_content = None
+    alert = Mock(spec=GifViewer, id="alert", priority=10.0)
+    matrix._content = {"alert": alert}
+    parameters = cast("ContentParameters", {})
+
+    Matrix._queue_content_message(
+        matrix,
+        {"id": "alert", "priority": 0, "parameters": parameters},
+    )
+
+    assert matrix._content_queue.get() == (0.0, alert, parameters)
+    matrix._remove_content.assert_not_called()
+
+
+def test_render_failure_terminates_the_service() -> None:
+    """A dead rendering worker cannot leave the service falsely healthy."""
+    matrix = Mock(spec=Matrix)
+    matrix._run_content_loop.side_effect = RuntimeError("renderer failed")
+    with (
+        patch("models.matrix.kill") as terminate,
+        patch("models.matrix.getpid", return_value=123),
+    ):
+        Matrix._content_loop(matrix)
+
+    terminate.assert_called_once_with(123, SIGTERM)
+
+
+def test_setup_cancellation_does_not_reactivate_content(mqtt_client: MqttClient) -> None:
+    """A stop during setup must not enter an iterator that activates playback."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content,
+        matrix,
+    )
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    content = Mock(spec=GifViewer, id="alert", priority=1.0, active=True)
+    parameters = cast("ContentParameters", {})
+    matrix._content_queue.add(content, parameters)
+    matrix._get_next_content.side_effect = partial(Matrix._get_next_content, matrix)
+    matrix._render_content.side_effect = partial(Matrix._render_content, matrix)
+
+    def cancel_setup() -> Iterator[None]:
+        content.active = False
+        yield
+
+    content.setup.side_effect = cancel_setup
+
+    Matrix._run_content_loop(matrix)
+
+    matrix.get_canvas_swap_canvas.assert_not_called()
+    matrix._handle_content_stop.assert_called_once()
+    assert matrix._content_thread is None
+
+
+def test_cancel_child_in_a_queued_combination(mqtt_client: MqttClient) -> None:
+    """Cancelling rain behind an alert cannot restart it from a queued combination."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    matrix.current_content = Mock(spec=GifViewer)
+    rain = Mock(spec=RainingGrid, id="rain", priority=const.MAX_PRIORITY)
+    clock = Mock(spec=Clock, id="clock", priority=15.0)
+    combination = Mock(
+        spec=Combination,
+        id="combination",
+        priority=10.0,
+        content=(rain, clock),
+    )
+    parameters = cast("ContentParameters", {})
+    matrix._content_queue.add(combination, parameters)
+
+    Matrix._remove_content(matrix, rain)
+
+    assert matrix._content_queue.get() == (15.0, clock, parameters)
+    assert matrix._content_queue.empty()
+
+
+def test_surviving_combination_child_resumes_after_worker_closes(
+    mqtt_client: MqttClient,
+) -> None:
+    """Worker cleanup must not discard a still-requested combination member."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    rain = Mock(
+        spec=RainingGrid,
+        id="rain",
+        priority=10.0,
+        active=False,
+        stop_reason=None,
+    )
+    matrix.current_content = Mock(
+        spec=Combination,
+        priority=const.MAX_PRIORITY,
+        stop_reason=StopType.TRANSFORM_REQUIRED,
+        content=(rain,),
+    )
+    parameters = cast("ContentParameters", {})
+
+    Matrix._handle_content_stop(matrix, parameters, Mock())
+
+    assert matrix._content_queue.get()[1] is rain
+
+
+def test_reprioritizing_current_content_yields_to_waiting_alert(
+    mqtt_client: MqttClient,
+) -> None:
+    """Lowering the active item's importance must reconsider the already waiting queue."""
+    matrix = Mock(spec=Matrix)
+    matrix._interrupt_for_queued_content.side_effect = partial(
+        Matrix._interrupt_for_queued_content,
+        matrix,
+    )
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    current = Mock(spec=GifViewer, id="current", priority=1.0, stop_reason=None)
+    alert = Mock(spec=GifViewer, id="alert", priority=5.0)
+    matrix.current_content = current
+    matrix._content = {"current": current}
+    parameters = cast("ContentParameters", {})
+    matrix._content_queue.add(alert, parameters)
+
+    Matrix._queue_content_message(
+        matrix,
+        {"id": "current", "priority": 10, "parameters": parameters},
+    )
+
+    current.stop.assert_called_once_with(StopType.PRIORITY, reset_priority=False)
+
+
+def test_enqueue_during_worker_exit_starts_a_replacement(mqtt_client: MqttClient) -> None:
+    """A producer waiting for shutdown cannot mistake the exiting worker for an owner."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_lock = RLock()
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    clearing = Event()
+    allow_exit = Event()
+    producer_entered = Event()
+    producer_finished = Event()
+    content = Mock(spec=GifViewer, id="alert", priority=1.0)
+
+    def clear() -> None:
+        clearing.set()
+        assert allow_exit.wait(2)
+
+    def enqueue() -> None:
+        producer_entered.set()
+        with matrix._content_lock:
+            matrix._content_queue.add(content, cast("ContentParameters", {}))
+            Matrix._start_content_thread(matrix)
+        producer_finished.set()
+
+    matrix.clear_matrix.side_effect = clear
+    worker = Thread(target=partial(Matrix._run_content_loop, matrix))
+    producer = Thread(target=enqueue)
+    matrix._content_thread = worker
+    with patch("models.matrix.Thread") as replacement:
+        try:
+            worker.start()
+            assert clearing.wait(2)
+            producer.start()
+            assert producer_entered.wait(2)
+            assert not producer_finished.is_set()
+        finally:
+            allow_exit.set()
+            worker.join(2)
+            if producer.ident is not None:
+                producer.join(2)
+
+        assert not worker.is_alive()
+        assert not producer.is_alive()
+        assert producer_finished.is_set()
+        replacement.return_value.start.assert_called_once()
+        assert matrix._content_thread is replacement.return_value
+        assert matrix._content_queue.get()[1] is content
+
+
+@pytest.mark.parametrize("priority", [float("inf"), float("-inf"), float("nan")])
+def test_nonfinite_priority_is_rejected(mqtt_client: MqttClient, priority: float) -> None:
+    """Invalid numeric priorities cannot corrupt queue ordering or cancel content."""
+    matrix = Mock(spec=Matrix)
+    matrix._content_queue = ContentQueue(mqtt_client, "/test/queue")
+    alert = Mock(spec=GifViewer, id="alert", priority=1.0)
+    matrix._content = {"alert": alert}
+
+    with pytest.raises(ValueError, match="finite"):
+        Matrix._queue_content_message(
+            matrix,
+            {
+                "id": "alert",
+                "priority": priority,
+                "parameters": cast("ContentParameters", {}),
+            },
+        )
+
+    assert alert.priority == pytest.approx(1.0)
+    assert matrix._content_queue.empty()
+
+
+def test_existing_combination_reprioritizes_without_duplicate_members() -> None:
+    """Updating an existing member changes its combination priority without rebuilding it."""
+    matrix = Mock(spec=Matrix)
+    matrix.content_works_with = {RainingGrid: {Clock}, Clock: {RainingGrid}}
+    matrix._content_works_with.side_effect = partial(Matrix._content_works_with, matrix)
+    rain = Mock(spec=RainingGrid, id="rain", priority=10.0)
+    clock = Mock(spec=Clock, id="clock", priority=0.0)
+    combination = Mock(spec=Combination, content=(clock, rain), priority=10.0)
+    matrix._sort_content.return_value = (clock, rain)
+
+    result = Matrix._attempt_combination(matrix, clock, combination)
+
+    assert result is combination
+    assert combination.priority == pytest.approx(0.0)
+    combination.update_setting.assert_not_called()
