@@ -448,12 +448,16 @@ class Matrix:
 
         # Check if the new content can be combined with anything else that is queued
         for _, queued_content, q_prms in self._content_queue:
-            if isinstance(queued_content, DynamicContent) and isinstance(
-                combined := self._attempt_combination(
-                    queued_content,
-                    combine_with=next_content,
-                ),
-                Combination,
+            if (
+                isinstance(queued_content, DynamicContent)
+                and (
+                    combined := self._attempt_combination(
+                        queued_content,
+                        combine_with=next_content,
+                    )
+                )
+                is not queued_content
+                and isinstance(combined, Combination)
             ):
                 # Combination has been created, so overwrite the current content
                 next_content = combined
