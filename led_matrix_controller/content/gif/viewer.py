@@ -76,7 +76,13 @@ class GifViewer(PreDefinedContent):
 
     def __iter__(self) -> Generator[None, None, None]:
         """Iterate once per each frame of the GIF."""
+        self.active = True
+
         for _ in range(self.canvas_count):
+            if not self.active:
+                return
+
             yield
 
-        self.stop(StopType.EXPIRED)
+        if self.active:
+            self.stop(StopType.EXPIRED)

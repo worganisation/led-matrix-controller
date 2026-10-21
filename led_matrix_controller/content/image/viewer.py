@@ -7,7 +7,7 @@ from logging import DEBUG, getLogger
 from time import sleep
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from content.base import PreDefinedContent
+from content.base import PreDefinedContent, StopType
 from PIL import Image
 from utils import const, to_kebab_case
 from wg_utilities.loggers import add_stream_handler
@@ -67,6 +67,7 @@ class ImageViewer(PreDefinedContent):
 
     def __iter__(self) -> Generator[None, None, None]:
         """Yield nothing; this is a static image."""
+        self.active = True
         tts = self.ticks_to_sleep
 
         yield
@@ -88,3 +89,6 @@ class ImageViewer(PreDefinedContent):
                 break
 
         self.is_sleeping = False
+
+        if self.active:
+            self.stop(StopType.EXPIRED)

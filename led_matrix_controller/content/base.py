@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
 import math
 import re
 from abc import ABC, abstractmethod
@@ -23,7 +22,6 @@ from typing import (
 )
 
 import numpy as np
-from httpx import URL
 from numpy.typing import NDArray
 from typing_extensions import TypeVar
 from utils import const, mtrx
@@ -215,19 +213,26 @@ class ContentBase(ABC, Generic[ContentType]):
         """Convert the array to an image."""
 
     @final
-    def chain_generators(self) -> itertools.chain[None]:
-        """Chain the generators (setup, run, teardown) of the content."""
-        chain: list[Iterator[None]] = []
-
+    def chain_generators(self) -> Generator[None, None, None]:
+        """Run setup and playback, preserving state during priority interruptions."""
         if (setup := self.setup()) is not None:
-            chain.append(setup)
+            while self.active:
+                try:
+                    frame = next(setup)
+                except StopIteration:
+                    break
 
-        chain.append(iter(self))
+                if self.active:
+                    yield frame
 
-        if (teardown := self.teardown()) is not None:
-            chain.append(teardown)
+        if self.active:
+            yield from self
 
-        return itertools.chain(*chain)
+        if (
+            self.stop_reason not in {StopType.PRIORITY, StopType.COMBINED}
+            and (teardown := self.teardown()) is not None
+        ):
+            yield from teardown
 
     def setting_update_callback(self, update_setting: str | None = None) -> None:
         """Callback for when a setting is updated."""
@@ -294,7 +299,7 @@ class ContentBase(ABC, Generic[ContentType]):
             with suppress(TypeError):
                 return obj.__json__()
 
-        if isinstance(obj, PathLike | URL):
+        if isinstance(obj, PathLike):
             return str(obj)
 
         if isinstance(obj, re.Pattern):
