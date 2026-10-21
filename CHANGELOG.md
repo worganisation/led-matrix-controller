@@ -2,6 +2,167 @@
 
 <!-- version list -->
 
+## v1.13.0 (2026-10-21)
+
+### Bug Fixes
+
+- Allow CodSpeed simulation process personality in container
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Authenticate benchmark uploads with GitHub OIDC
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Bound rain scheduling and simulation worker shutdown
+  ([#549](https://github.com/worganisation/led-matrix-controller/pull/549),
+  [`22df74c`](https://github.com/worganisation/led-matrix-controller/commit/22df74c28083098a7b6c93566c13b6adbb82d6c0))
+
+- Bound rain simulation scheduling and worker lifecycle
+  ([#549](https://github.com/worganisation/led-matrix-controller/pull/549),
+  [`22df74c`](https://github.com/worganisation/led-matrix-controller/commit/22df74c28083098a7b6c93566c13b6adbb82d6c0))
+
+- Bound setting transitions and validate runtime configuration
+  ([#550](https://github.com/worganisation/led-matrix-controller/pull/550),
+  [`58585ec`](https://github.com/worganisation/led-matrix-controller/commit/58585ecf0ff70e39e91b791f0dd4f541a1da6a7d))
+
+- Isolate container benchmark caches from runner checkout
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Keep container test caches outside runner checkout
+  ([#554](https://github.com/worganisation/led-matrix-controller/pull/554),
+  [`4f1edbe`](https://github.com/worganisation/led-matrix-controller/commit/4f1edbebb65cf1225c29856d69326122add65078))
+
+- Keep content playback interruptible and load artwork asynchronously
+  ([#552](https://github.com/worganisation/led-matrix-controller/pull/552),
+  [`d7e1600`](https://github.com/worganisation/led-matrix-controller/commit/d7e1600741559439482343b94b755918ad53372b))
+
+- Keep playback interruptible and load artwork in the background
+  ([#552](https://github.com/worganisation/led-matrix-controller/pull/552),
+  [`d7e1600`](https://github.com/worganisation/led-matrix-controller/commit/d7e1600741559439482343b94b755918ad53372b))
+
+- Let current-value requests cancel setting transitions
+  ([#550](https://github.com/worganisation/led-matrix-controller/pull/550),
+  [`58585ec`](https://github.com/worganisation/led-matrix-controller/commit/58585ecf0ff70e39e91b791f0dd4f541a1da6a7d))
+
+- Make display scheduling deterministic and recover failed rendering
+  ([#554](https://github.com/worganisation/led-matrix-controller/pull/554),
+  [`4f1edbe`](https://github.com/worganisation/led-matrix-controller/commit/4f1edbebb65cf1225c29856d69326122add65078))
+
+- Preserve cancellation across combined display interruptions
+  ([#554](https://github.com/worganisation/led-matrix-controller/pull/554),
+  [`4f1edbe`](https://github.com/worganisation/led-matrix-controller/commit/4f1edbebb65cf1225c29856d69326122add65078))
+
+- Preserve rain when forming a combined display
+  ([#548](https://github.com/worganisation/led-matrix-controller/pull/548),
+  [`60731d4`](https://github.com/worganisation/led-matrix-controller/commit/60731d49c6e753f4829ff5cc3e02a501de3ee595))
+
+- Preserve running content when forming combinations
+  ([#548](https://github.com/worganisation/led-matrix-controller/pull/548),
+  [`60731d4`](https://github.com/worganisation/led-matrix-controller/commit/60731d49c6e753f4829ff5cc3e02a501de3ee595))
+
+- Repair benchmark tooling and metadata generation
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Retain runtime artwork annotation imports
+  ([#550](https://github.com/worganisation/led-matrix-controller/pull/550),
+  [`58585ec`](https://github.com/worganisation/led-matrix-controller/commit/58585ecf0ff70e39e91b791f0dd4f541a1da6a7d))
+
+- Serialize matrix scheduling and preserve queue ordering
+  ([#554](https://github.com/worganisation/led-matrix-controller/pull/554),
+  [`4f1edbe`](https://github.com/worganisation/led-matrix-controller/commit/4f1edbebb65cf1225c29856d69326122add65078))
+
+- Synchronize audio frames and serialize capture lifecycle
+  ([#553](https://github.com/worganisation/led-matrix-controller/pull/553),
+  [`b0b8370`](https://github.com/worganisation/led-matrix-controller/commit/b0b8370e5a0a73d875f54d4c93ddd7b902bcce8f))
+
+- Trust container checkout for benchmark upload
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Type GIF playback using the format-specific image class
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Validate configuration and make settings transitions reliable
+  ([#550](https://github.com/worganisation/led-matrix-controller/pull/550),
+  [`58585ec`](https://github.com/worganisation/led-matrix-controller/commit/58585ecf0ff70e39e91b791f0dd4f541a1da6a7d))
+
+- **audio**: Consume plain-text matrix state via MQTT
+  ([#553](https://github.com/worganisation/led-matrix-controller/pull/553),
+  [`b0b8370`](https://github.com/worganisation/led-matrix-controller/commit/b0b8370e5a0a73d875f54d4c93ddd7b902bcce8f))
+
+- **audio**: Synchronize frames and serialize stream lifecycle
+  ([#553](https://github.com/worganisation/led-matrix-controller/pull/553),
+  [`b0b8370`](https://github.com/worganisation/led-matrix-controller/commit/b0b8370e5a0a73d875f54d4c93ddd7b902bcce8f))
+
+### Build System
+
+- Align locked scientific typing dependencies
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Include validated application settings dependencies
+  ([#550](https://github.com/worganisation/led-matrix-controller/pull/550),
+  [`58585ec`](https://github.com/worganisation/led-matrix-controller/commit/58585ecf0ff70e39e91b791f0dd4f541a1da6a7d))
+
+- Replace artwork HTTP dependencies with aiohttp
+  ([#552](https://github.com/worganisation/led-matrix-controller/pull/552),
+  [`d7e1600`](https://github.com/worganisation/led-matrix-controller/commit/d7e1600741559439482343b94b755918ad53372b))
+
+### Chores
+
+- Repair benchmarks and simplify developer tooling
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+### Code Style
+
+- Fixes from prek hooks ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+- Fixes from prek hooks ([#553](https://github.com/worganisation/led-matrix-controller/pull/553),
+  [`b0b8370`](https://github.com/worganisation/led-matrix-controller/commit/b0b8370e5a0a73d875f54d4c93ddd7b902bcce8f))
+
+- Fixes from prek hooks ([#552](https://github.com/worganisation/led-matrix-controller/pull/552),
+  [`d7e1600`](https://github.com/worganisation/led-matrix-controller/commit/d7e1600741559439482343b94b755918ad53372b))
+
+- Fixes from prek hooks ([#554](https://github.com/worganisation/led-matrix-controller/pull/554),
+  [`4f1edbe`](https://github.com/worganisation/led-matrix-controller/commit/4f1edbebb65cf1225c29856d69326122add65078))
+
+- Format rain benchmark fixture
+  ([#549](https://github.com/worganisation/led-matrix-controller/pull/549),
+  [`22df74c`](https://github.com/worganisation/led-matrix-controller/commit/22df74c28083098a7b6c93566c13b6adbb82d6c0))
+
+### Features
+
+- Discover content settings in Home Assistant via MQTT
+  ([#556](https://github.com/worganisation/led-matrix-controller/pull/556),
+  [`5493934`](https://github.com/worganisation/led-matrix-controller/commit/54939349d88cd81f0d6e83796eaeb15b0fbc7ae4))
+
+- Publish throttled render progress telemetry
+  ([#554](https://github.com/worganisation/led-matrix-controller/pull/554),
+  [`4f1edbe`](https://github.com/worganisation/led-matrix-controller/commit/4f1edbebb65cf1225c29856d69326122add65078))
+
+### Refactoring
+
+- Remove unused text rendering constants
+  ([#551](https://github.com/worganisation/led-matrix-controller/pull/551),
+  [`96d4cdc`](https://github.com/worganisation/led-matrix-controller/commit/96d4cdcfa7d5ecd7f524875bdcd4e1e4283d642e))
+
+### Testing
+
+- Narrow selected combination before inspecting content
+  ([#548](https://github.com/worganisation/led-matrix-controller/pull/548),
+  [`60731d4`](https://github.com/worganisation/led-matrix-controller/commit/60731d49c6e753f4829ff5cc3e02a501de3ee595))
+
+- Patch audio dependencies without implicit module exports
+  ([#553](https://github.com/worganisation/led-matrix-controller/pull/553),
+  [`b0b8370`](https://github.com/worganisation/led-matrix-controller/commit/b0b8370e5a0a73d875f54d4c93ddd7b902bcce8f))
+
+
 ## v1.12.0 (2026-10-20)
 
 ### Bug Fixes
