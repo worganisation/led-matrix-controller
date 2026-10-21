@@ -91,3 +91,24 @@ def test_current_value_cancels_pending_transition() -> None:
     assert setting.target_value == pytest.approx(0.0)
     assert setting.value == pytest.approx(0.0)
     assert not setting._transition_running
+
+
+def test_transition_completion_publishes_scaled_current_state() -> None:
+    """An active transition reports its final value on the separate state topic."""
+    setting = make_setting()
+    setting.state_topic = "/mtrxpi/test/level/state"
+    setting.state_modifier = lambda value: value * 100
+    client = Mock()
+    with patch.object(
+        TransitionableParameterSetting,
+        "_MQTT_CLIENT",
+        client,
+        create=True,
+    ):
+        setting.on_message(1.0)
+        setting.transition_thread.join(timeout=1)
+
+    assert not setting.transition_thread.is_alive()
+    assert setting.value == pytest.approx(1.0)
+    assert client.publish.call_args.args == (setting.state_topic, "100.0")
+    assert client.publish.call_args.kwargs == {"qos": 1, "retain": True}
