@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from functools import lru_cache, wraps
 from itertools import islice
-from os import getenv
 from queue import Empty, Full, Queue
 from threading import Event, Thread
 from typing import (
@@ -24,6 +23,7 @@ import numpy as np
 from models.rule import Rule
 from numpy.typing import NDArray
 from utils import const
+from utils.config import SETTINGS
 from wg_utilities.loggers import get_streaming_logger
 
 from .base import GridView, StateBase
@@ -62,7 +62,7 @@ RuleTuple = tuple[
 ]
 RuleSchedule = tuple[tuple[int, RuleTuple], ...]
 
-QUEUE_SIZE: Final[int] = int(getenv("AUTOMATON_QUEUE_SIZE", "100"))
+QUEUE_SIZE: Final[int] = SETTINGS.automaton_queue_size
 
 
 @dataclass(kw_only=True, slots=True)

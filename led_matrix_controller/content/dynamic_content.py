@@ -121,7 +121,7 @@ class DynamicContent(ContentBase[GridView], ABC):
             retain=True,
         )
 
-        if invoke_callback:
+        if invoke_callback and not setting.invoke_settings_callback:
             self.setting_update_callback(update_setting=slug)
 
         return self

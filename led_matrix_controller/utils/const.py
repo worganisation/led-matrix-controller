@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import re
-from datetime import UTC, datetime
-from os import environ, getenv
 from pathlib import Path
 from socket import gethostname
 from sys import platform
@@ -13,17 +10,14 @@ from typing import Any, Final
 import numpy as np
 from PIL import Image
 
-DEBUG_MODE: Final[bool] = bool(int(getenv("DEBUG_MODE", "0")))
+from .config import SETTINGS
 
-MQTT_USERNAME: Final[str] = environ["MQTT_USERNAME"]
-MQTT_PASSWORD: Final[str] = environ["MQTT_PASSWORD"]
+DEBUG_MODE: Final[bool] = SETTINGS.debug_mode
 
-MQTT_HOST: Final[str] = getenv("MQTT_HOST", "http://homeassistant.local")
-
-HOSTNAME: Final[str] = getenv(
-    "HOSTNAME_OVERRIDE",
-    re.sub(r"[^a-z0-9]", "-", gethostname().lower()),
-)
+MQTT_USERNAME: Final[str] = SETTINGS.mqtt_username
+MQTT_PASSWORD: Final[str] = SETTINGS.mqtt_password
+MQTT_HOST: Final[str] = SETTINGS.mqtt_host
+HOSTNAME: Final[str] = SETTINGS.hostname_override
 
 IS_PI = gethostname().lower() == "mtrxpi" and platform != "darwin"
 
@@ -32,12 +26,12 @@ FONT_HEIGHT: Final[int] = 7
 SCROLL_INCREMENT_DISTANCE: Final[int] = 2 * FONT_WIDTH
 
 BOOLEANS: Final[np.typing.NDArray[np.bool_]] = np.array([False, True], dtype=np.bool_)
-RNG = np.random.default_rng(int(getenv("RNG_SEED", datetime.now(UTC).timestamp())))
+RNG = np.random.default_rng(SETTINGS.rng_seed)
 
 REPO_PATH: Final[Path] = Path(__file__).parents[2]
 ASSETS_DIRECTORY: Final[Path] = REPO_PATH / "assets"
 
-TICKS_PER_SECOND: Final[int] = int(getenv("TICKS_PER_SECOND", "100"))  # ticks
+TICKS_PER_SECOND: Final[int] = SETTINGS.ticks_per_second  # ticks
 TICK_LENGTH: Final[float] = 1 / TICKS_PER_SECOND  # seconds
 
 MATRIX_HEIGHT: Final[int] = 64
@@ -50,7 +44,7 @@ EMPTY_IMAGE: Final[Image.Image] = Image.new("RGB", MATRIX_SHAPE, (0, 0, 0))
 MAX_PRIORITY: Final[float] = 1e10
 
 
-AUDIO_VISUALISER_SHM_NAME: Final[str] = environ["AUDIO_VISUALISER_SHM_NAME"]
+AUDIO_VISUALISER_SHM_NAME: Final[str] = SETTINGS.audio_visualiser_shm_name
 
 
 def seconds_to_ticks(seconds: float, *_: Any) -> int:
