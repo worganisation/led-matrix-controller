@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from argparse import ArgumentParser
 from enum import StrEnum
 from pathlib import Path
 from textwrap import dedent
@@ -29,7 +30,10 @@ def titleify(slug: str) -> str:
     return slug.replace("-", " ").replace("_", " ").title()
 
 
-def mqtt_number(setting: Setting[int] | Setting[float]) -> None:
+def mqtt_number(
+    setting: Setting[int] | Setting[float],
+    output_dir: Path = MQTT_DIR,
+) -> None:
     unit = setting.unit_of_measurement
 
     if not unit:
@@ -73,7 +77,7 @@ def mqtt_number(setting: Setting[int] | Setting[float]) -> None:
         + "\n"
     )
 
-    file_path = MQTT_DIR.joinpath(
+    file_path = output_dir.joinpath(
         "number",
         "mtrxpi",
         setting.instance.id.replace("-", "_"),
@@ -85,7 +89,7 @@ def mqtt_number(setting: Setting[int] | Setting[float]) -> None:
     file_path.write_text(yaml)
 
 
-def mqtt_select(setting: Setting[Any]) -> None:
+def mqtt_select(setting: Setting[Any], output_dir: Path = MQTT_DIR) -> None:
     options = "\n      ".join(f"- {titleify(option)}" for option in setting.type_)
 
     yaml = (
@@ -115,7 +119,7 @@ def mqtt_select(setting: Setting[Any]) -> None:
         + "\n"
     )
 
-    file_path = MQTT_DIR.joinpath(
+    file_path = output_dir.joinpath(
         "select",
         "mtrxpi",
         setting.instance.id.replace("-", "_"),
@@ -127,7 +131,7 @@ def mqtt_select(setting: Setting[Any]) -> None:
     file_path.write_text(yaml)
 
 
-def mqtt_switch(setting: Setting[bool]) -> None:
+def mqtt_switch(setting: Setting[bool], output_dir: Path = MQTT_DIR) -> None:
     yaml = (
         dedent(
             f"""
@@ -156,7 +160,7 @@ def mqtt_switch(setting: Setting[bool]) -> None:
         + "\n"
     )
 
-    file_path = MQTT_DIR.joinpath(
+    file_path = output_dir.joinpath(
         "switch",
         "mtrxpi",
         setting.instance.id.replace("-", "_"),
@@ -168,33 +172,32 @@ def mqtt_switch(setting: Setting[bool]) -> None:
     file_path.write_text(yaml)
 
 
-def mqtt_text(setting: Setting[str]) -> None:
+def mqtt_text(setting: Setting[str], output_dir: Path = MQTT_DIR) -> None:
     yaml = (
         dedent(
             f"""
     ---
-      - text:
-          name: "MtrxPi | {titleify(setting.instance.id)}: {titleify(setting.slug)}"
+    name: "MtrxPi | {titleify(setting.instance.id)}: {titleify(setting.slug)}"
 
-          unique_id: mtrxpi_{setting.instance.id.replace("-", "_")}_{setting.slug}
+    unique_id: mtrxpi_{setting.instance.id.replace("-", "_")}_{setting.slug}
 
-          command_topic: {setting.mqtt_topic}
+    command_topic: {setting.mqtt_topic}
 
-          command_template: '"{{{{ value }}}}"'  # hacv disable: InvalidTemplateVar:value
+    command_template: "{{{{ value | tojson }}}}"  # hacv disable: InvalidTemplateVar:value
 
-          icon: {setting.icon}
+    icon: {setting.icon}
 
-          retain: true
+    retain: true
 
-          state_topic: {setting.mqtt_topic}
+    state_topic: {setting.mqtt_topic}
 
-          value_template: "{{{{ value_json.strip('\\"') }}}}"
+    value_template: "{{{{ value_json }}}}"
     """,
         ).strip()
         + "\n"
     )
 
-    file_path = MQTT_DIR.joinpath(
+    file_path = output_dir.joinpath(
         "text",
         "mtrxpi",
         setting.instance.id.replace("-", "_"),
@@ -207,15 +210,19 @@ def mqtt_text(setting: Setting[str]) -> None:
 
 
 def main() -> None:
+    parser = ArgumentParser(description="Generate Home Assistant MQTT entities.")
+    parser.add_argument("--output-dir", type=Path, default=MQTT_DIR)
+    args = parser.parse_args()
+
     for setting in get_all_settings():
         if setting.type_ in {int, float}:
-            mqtt_number(setting)
+            mqtt_number(setting, args.output_dir)
         elif issubclass(setting.type_, StrEnum):
-            mqtt_select(setting)
+            mqtt_select(setting, args.output_dir)
         elif setting.type_ is bool:
-            mqtt_switch(setting)
+            mqtt_switch(setting, args.output_dir)
         elif setting.type_ is str:
-            mqtt_text(setting)
+            mqtt_text(setting, args.output_dir)
         else:
             print(f"Unsupported type for {setting.slug!r}: {setting.type_}")
 
