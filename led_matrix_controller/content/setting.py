@@ -81,6 +81,12 @@ class Setting(Generic[S]):
     Allows for scaling, conversion, etc. relative to Home Assistant's inputs.
     """
 
+    state_modifier: Callable[[S], str | int | float | bool] | None = None
+    """Convert an internal value back to the units used by MQTT controls."""
+
+    state_topic: str | None = field(default=None, init=False, repr=False)
+    """Dedicated state topic assigned when discovery exposes this setting."""
+
     type_: type[S] = field(init=False, repr=False)
     """The type of the setting's value (e.g. int, float, bool)."""
 
@@ -121,6 +127,8 @@ class Setting(Generic[S]):
     """The MQTT client to use for this setting."""
 
     def __post_init__(self) -> None:
+        self.state_topic = None
+
         if (
             self.minimum is not None
             and self.maximum is not None
@@ -215,7 +223,7 @@ class Setting(Generic[S]):
             and getattr(self, "target_value", payload) != payload
         ):
             self._set_value_from_payload(payload)
-        elif payload != raw_payload:
+        elif payload != raw_payload and self.state_topic is None:
             # e.g. out of bounds value was coerced to min/max
             try:
                 mqtt_payload = dumps(payload)
@@ -236,6 +244,24 @@ class Setting(Generic[S]):
         else:
             # Exact same message retrieved
             LOGGER.debug("Value unchanged: %r", payload)
+
+        self.publish_state()
+
+    @property
+    def state_value(self) -> S | str | int | float | bool:
+        """Current value in the units expected by the MQTT control."""
+        value = self.state_modifier(self.value) if self.state_modifier else self.value
+        return round(value, self.fp_precision) if isinstance(value, float) else value
+
+    def publish_state(self) -> None:
+        """Report actual state without sending it back through command processing."""
+        if self.state_topic is not None:
+            self.mqtt_client.publish(
+                self.state_topic,
+                dumps(self.state_value),
+                qos=1,
+                retain=True,
+            )
 
     def setup(
         self,
@@ -448,6 +474,7 @@ class TransitionableSettingMixin(Setting[N]):
             return
 
         self.matrix.publish_attributes()
+        self.publish_state()
 
     def _run_transition(self) -> None:
         """Advance on a bounded clock even when the renderer is idle or sleeping."""
