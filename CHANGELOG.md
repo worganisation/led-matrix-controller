@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v1.13.1 (2026-10-21)
+
+### Bug Fixes
+
+- Publish current MQTT discovery settings state
+  ([#558](https://github.com/worganisation/led-matrix-controller/pull/558),
+  [`979e759`](https://github.com/worganisation/led-matrix-controller/commit/979e759481baadf8ee0c075ff23c645f50aaf59c))
+
+
 ## v1.13.0 (2026-10-21)
 
 ### Bug Fixes
