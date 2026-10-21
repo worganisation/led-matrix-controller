@@ -34,6 +34,10 @@ jobs:
       - opentofu
     timeout-minutes: 20
     container: python:3.11-slim-bookworm
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      UV_PROJECT_ENVIRONMENT: /tmp/mtrxpi-venv
+      PYTEST_ADDOPTS: -o cache_dir=/tmp/mtrxpi-pytest-cache
     steps:
       - name: Restore workspace ownership
         run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"
@@ -52,7 +56,7 @@ jobs:
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: false
-          cache-local-path: ${{ github.workspace }}/.uv-cache
+          cache-local-path: /tmp/mtrxpi-uv-cache
 
       - name: Install Python dependencies
         run: uv sync --locked --all-groups
