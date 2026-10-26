@@ -35,7 +35,7 @@ repos:
           - pytest==9.1.1
           - pytest-codspeed==3.2.0
           - wg-utilities==5.17.4
-          - rgbmatrixemulator==0.13.5
+          - rgbmatrixemulator==0.20.0
           - types-pyaudio==0.2.16.20260508
           - scipy-stubs==1.17.1.5
 
