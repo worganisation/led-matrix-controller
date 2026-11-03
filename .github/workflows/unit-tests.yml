@@ -33,7 +33,7 @@ jobs:
       - iac
       - opentofu
     timeout-minutes: 20
-    container: python:3.11-slim-bookworm
+    container: python:3.15-slim-bookworm
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       UV_PROJECT_ENVIRONMENT: /tmp/mtrxpi-venv
@@ -53,7 +53,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false
           cache-local-path: /tmp/mtrxpi-uv-cache
