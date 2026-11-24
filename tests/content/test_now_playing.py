@@ -104,7 +104,7 @@ def test_resize_cached_artwork(artwork: NowPlaying) -> None:
         artwork: Player with an isolated artwork cache.
     """
     assert artwork.file_path is not None
-    source = np.full((64, 64, 4), 255, dtype=np.uint8)
+    source = np.full((64, 64, 4), 255, dtype=np.int_)
     artwork._current_image = ((artwork.file_path, artwork.artwork_uri or ""), source)
     artwork.size = 16
 

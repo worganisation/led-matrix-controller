@@ -56,7 +56,7 @@ def test_discovery_lifecycle_does_not_overwrite_state(mqtt_client: MqttClient) -
 
     mqtt_client._on_connect(paho, None, Mock(), Mock(is_failure=False), None)
     first_configs = paho.publish.call_args_list.copy()
-    assert len(first_configs) == 70
+    assert len(first_configs) == 72
     assert all(
         (call.args[0].endswith("/config") or call.args[0].endswith("/state"))
         and call.kwargs["retain"]
@@ -153,7 +153,7 @@ def test_retained_commands_restore_scaled_state_without_feedback(
         for call in paho.publish.call_args_list
         if call.args[0].endswith("/state")
     }
-    assert len(initial_states) == 35
+    assert len(initial_states) == 36
     assert initial_states[setting.state_topic] == 25
     assert initial_states[rain.settings["plant_growth_chance"].state_topic] == 1
     assert initial_states[
