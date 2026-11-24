@@ -20,11 +20,11 @@ except ImportError:
     if TYPE_CHECKING:
         from PIL import Image
 
-    from RGBMatrixEmulator import (  # type: ignore[import-untyped]
+    from RGBMatrixEmulator import (
         RGBMatrix,
         RGBMatrixOptions,
     )
-    from RGBMatrixEmulator.graphics import (  # type: ignore[import-untyped]
+    from RGBMatrixEmulator.graphics import (
         Color,
         DrawText,
         Font,
