@@ -879,15 +879,18 @@ class Matrix:
 
     @brightness.setter
     def brightness(self, value: int) -> None:
-        """Set the brightness of the matrix."""
+        """Apply the hardware brightness and refresh sleeping content.
+
+        Args:
+            value: The matrix brightness as a percentage.
+        """
         self._brightness = value
         self.matrix.brightness = value
 
         LOGGER.debug("Set brightness to %s (%i)", value, self.tick)
 
-        # If there is no content playing, actively swap the canvas to update the brightness
-        # Otherwise the brightness will be updated on each tick anyway
-        if self.current_content is None or self.current_content.is_sleeping:
+        # An idle panel already displays black. Its spare canvas can hold the last frame.
+        if (content := self.current_content) is not None and content.is_sleeping:
             self.swap_canvas()
 
     @property
