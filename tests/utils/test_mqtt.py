@@ -27,7 +27,7 @@ def test_restores_topic_subscriptions_on_connect(mock_client_cls: Mock) -> None:
     mqtt_client.add_topic_callback("/mtrxpi/matrix/brightness", callback)
     paho_client.reset_mock()
 
-    mqtt_client._on_connect(paho_client, None, Mock(), Mock(), None)
+    mqtt_client._on_connect(paho_client, None, Mock(), Mock(is_failure=False), None)
 
     paho_client.subscribe.assert_has_calls(
         [
@@ -37,3 +37,12 @@ def test_restores_topic_subscriptions_on_connect(mock_client_cls: Mock) -> None:
         any_order=True,
     )
     assert paho_client.subscribe.call_count == 2
+
+
+@patch("utils.mqtt.mqtt.Client")
+def test_explicit_retain_false_overrides_default(mock_client_cls: Mock) -> None:
+    """Transient messages stay transient when the client default is retained."""
+    mqtt_client = MqttClient(retain=True)
+    mqtt_client.publish("/mtrxpi/test", "payload", retain=False)
+
+    assert mock_client_cls.return_value.publish.call_args.kwargs["retain"] is False

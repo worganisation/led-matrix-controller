@@ -75,13 +75,16 @@ class Rule:
 
     def active_on_frame(self, i: int, /) -> bool:
         """Return whether the rule is active on the given frame."""
-        current_frequency = (
+        return bool(frequency := self.current_frequency) and i % frequency == 0
+
+    @property
+    def current_frequency(self) -> int:
+        """The current rule interval in simulation frames."""
+        return (
             self.frequency
             if isinstance(self.frequency, int)
             else self._frequency_setting.value
         )
-
-        return bool(current_frequency) and i % current_frequency == 0
 
     def refresh_mask_generator(self, automaton: Automaton) -> None:
         """Refresh the mask generator for the rule.

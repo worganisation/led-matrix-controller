@@ -107,7 +107,7 @@ class DynamicContent(ContentBase[GridView], ABC):
         setting.value = value
 
         payload = dumps(
-            setting.value,
+            setting.state_value if setting.state_topic else setting.value,
             default=lambda x: (
                 x.id if isinstance(x, ContentBase) else self._json_encode(x)
             ),
@@ -121,7 +121,9 @@ class DynamicContent(ContentBase[GridView], ABC):
             retain=True,
         )
 
-        if invoke_callback:
+        setting.publish_state()
+
+        if invoke_callback and not setting.invoke_settings_callback:
             self.setting_update_callback(update_setting=slug)
 
         return self
@@ -131,4 +133,15 @@ class DynamicContent(ContentBase[GridView], ABC):
         self.active = True
 
         while self.active:
-            yield from self.refresh_content()
+            frames = self.refresh_content()
+            try:
+                while self.active:
+                    try:
+                        frame = next(frames)
+                    except StopIteration:
+                        break
+
+                    if self.active:
+                        yield frame
+            finally:
+                frames.close()

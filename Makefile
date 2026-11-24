@@ -1,4 +1,4 @@
-include .env
+-include .env
 export
 
 # Set AP to 0 to disable audio processor inclusion in commands
@@ -74,8 +74,7 @@ install-all:
 deploy:
 	@bash scripts/deploy-release.sh "$(TAG)"
 
-rain:
-	sudo .venv/bin/python led_matrix_controller/rain.py
+rain: run
 
 restart:
 	sudo systemctl restart led_matrix_controller.service
@@ -88,7 +87,7 @@ restart-ap:
 	sudo systemctl restart audio_processor.service
 
 run:
-	sudo .venv/bin/python led_matrix_controller/application/controller/led_matrix_controller.py
+	sudo $(PYTHON) led_matrix_controller/main.py
 
 start:
 	sudo systemctl start led_matrix_controller.service
@@ -128,4 +127,4 @@ update:
 
 
 vscode-shortcut-1:
-	uv run python led_matrix_controller/rain.py
+	DEBUG_MODE=1 uv run python led_matrix_controller/main.py

@@ -2,21 +2,34 @@
 
 from __future__ import annotations
 
-import atexit
+import fcntl
+import hashlib
+import mmap
+import os
 import re
+import struct
+import tempfile
+import time
 from enum import Enum
 from functools import lru_cache
-from multiprocessing import shared_memory
+from pathlib import Path
 from typing import TYPE_CHECKING, overload
 
-from wg_utilities.loggers import get_streaming_logger
+import numpy as np
 
 from .const import AUDIO_VISUALISER_SHM_NAME
 
 if TYPE_CHECKING:
-    from logging import Logger
+    from numpy.typing import NDArray
 
-LOGGER = get_streaming_logger(__name__)
+MAX_AUDIO_CHUNK_SIZE = 20000
+_AUDIO_HEADER = struct.Struct("QQd")
+_AUDIO_BUFFER_SIZE = _AUDIO_HEADER.size + (MAX_AUDIO_CHUNK_SIZE // 2 + 1) * 8
+_AUDIO_FRAME_MAX_AGE = 1.0
+_LINUX_SHARED_MEMORY = Path("/dev/shm")  # ruff:ignore[hardcoded-temp-file] — Both services need the same memory-backed directory.
+_AUDIO_FRAME_DIRECTORY = (
+    _LINUX_SHARED_MEMORY if _LINUX_SHARED_MEMORY.is_dir() else Path(tempfile.gettempdir())
+)
 
 
 class Patterns(Enum):
@@ -103,36 +116,92 @@ def hex_to_rgba(hex_code: str) -> tuple[int, int, int, int]:
     return r, g, b, a
 
 
-def get_shared_memory(
-    *,
-    logger: Logger = LOGGER,
-    size: int = 5120,
-    close_at_exit: bool = True,
-) -> shared_memory.SharedMemory:
-    """Get a shared memory object for use in the AudioVisualiser."""
-    try:
-        shm = shared_memory.SharedMemory(
-            name=AUDIO_VISUALISER_SHM_NAME,
-            create=True,
-            size=size,
-        )
-        logger.info(
-            "Created shared memory %r with size %s",
-            shm.name,
-            shm.size,
-        )
-    except FileExistsError:
-        shm = shared_memory.SharedMemory(name=AUDIO_VISUALISER_SHM_NAME)
-        logger.info("Opened existing shared memory %r with size %s", shm.name, shm.size)
+class AudioFrameBuffer:
+    """Share a fixed-capacity FFT frame between independently restarted services.
 
-        if shm.size != size:
-            logger.warning(
-                "Existing shared memory size (%s) does not match expected size (%s)",
-                shm.size,
-                size,
+    A file-backed mapping avoids the shared-memory resource tracker's process-exit
+    unlinking. The file lock protects both metadata and samples as one frame.
+    """
+
+    def __init__(self) -> None:
+        name = hashlib.sha256(AUDIO_VISUALISER_SHM_NAME.encode()).hexdigest()[:16]
+        path = _AUDIO_FRAME_DIRECTORY / f"matrix-audio-{name}.frames"
+        self._fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        fcntl.flock(self._fd, fcntl.LOCK_EX)
+        try:
+            if os.fstat(self._fd).st_size != _AUDIO_BUFFER_SIZE:
+                os.ftruncate(self._fd, _AUDIO_BUFFER_SIZE)
+            self._mapping = mmap.mmap(self._fd, _AUDIO_BUFFER_SIZE)
+        finally:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+
+    def write(
+        self,
+        magnitudes: NDArray[np.float64],
+        chunk_size: int,
+        sample_rate: int,
+    ) -> None:
+        """Publish one complete frame with the configuration that produced it."""
+        if not 1 <= chunk_size <= MAX_AUDIO_CHUNK_SIZE:
+            raise ValueError("Audio chunk size exceeds shared frame capacity")
+        if magnitudes.shape != (chunk_size // 2 + 1,):
+            raise ValueError("Audio frame length does not match its chunk size")
+
+        fcntl.flock(self._fd, fcntl.LOCK_EX)
+        try:
+            # An interrupted writer must leave an invalid frame, never partial samples.
+            _AUDIO_HEADER.pack_into(self._mapping, 0, 0, 0, 0)
+            destination: NDArray[np.float64] = np.ndarray(
+                magnitudes.shape,
+                dtype=np.float64,
+                buffer=self._mapping,
+                offset=_AUDIO_HEADER.size,
             )
+            np.copyto(destination, magnitudes)
+            _AUDIO_HEADER.pack_into(
+                self._mapping,
+                0,
+                chunk_size,
+                sample_rate,
+                time.monotonic(),
+            )
+        finally:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
 
-    if close_at_exit:
-        atexit.register(shm.close)
+    def read(
+        self,
+        destination: NDArray[np.float64],
+        chunk_size: int,
+        sample_rate: int,
+    ) -> bool:
+        """Copy a matching fresh frame without blocking the rendering thread."""
+        try:
+            fcntl.flock(self._fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
 
-    return shm
+        try:
+            frame_chunk, frame_rate, timestamp = _AUDIO_HEADER.unpack_from(self._mapping)
+            if (
+                (frame_chunk, frame_rate) != (chunk_size, sample_rate)
+                or not 0 <= time.monotonic() - timestamp <= _AUDIO_FRAME_MAX_AGE
+                or destination.shape != (chunk_size // 2 + 1,)
+                or not 1 <= chunk_size <= MAX_AUDIO_CHUNK_SIZE
+            ):
+                return False
+
+            source: NDArray[np.float64] = np.ndarray(
+                destination.shape,
+                dtype=np.float64,
+                buffer=self._mapping,
+                offset=_AUDIO_HEADER.size,
+            )
+            np.copyto(destination, source)
+            return True
+        finally:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+
+    def close(self) -> None:
+        """Release this process's handles without invalidating the other service."""
+        self._mapping.close()
+        os.close(self._fd)

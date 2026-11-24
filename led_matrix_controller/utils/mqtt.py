@@ -65,6 +65,9 @@ class MqttClient(metaclass=Singleton):
 
         self._retain = retain
         self._topics: set[str] = set()
+        self._connect_callbacks: list[Callable[[], None]] = []
+
+        self._connection_failures = 0
 
         if connect and not self._client.is_connected():
             LOGGER.debug(
@@ -73,8 +76,6 @@ class MqttClient(metaclass=Singleton):
                 const.HOSTNAME,
             )
             self._client.connect(const.MQTT_HOST)
-
-        self._connection_failures = 0
 
     def _on_connect(
         self,
@@ -91,11 +92,21 @@ class MqttClient(metaclass=Singleton):
         # A broker restart clears its in-memory subscription state. Keep track of
         # callbacks registered by this process and restore their subscriptions on
         # every successful connection.
-        for topic in self._topics:
+        if rc.is_failure:
+            return
+
+        for topic in tuple(self._topics):
             client.subscribe(topic)
 
         if self._topics:
             LOGGER.info("Restored %d MQTT subscriptions", len(self._topics))
+
+        for callback in tuple(self._connect_callbacks):
+            callback()
+
+    def add_connect_callback(self, callback: Callable[[], None]) -> None:
+        """Run a callback after subscriptions are restored on each successful connection."""
+        self._connect_callbacks.append(callback)
 
     def _on_connect_fail(
         self,
@@ -169,10 +180,34 @@ class MqttClient(metaclass=Singleton):
 
             callback(payload)
 
-        self._topics.add(topic)
-        self._client.subscribe(topic)
-        self._client.message_callback_add(topic, _cb)
+        self._register_topic_callback(topic, _cb)
 
+    def add_text_topic_callback(
+        self,
+        topic: str,
+        callback: Callable[[str | None], None],
+    ) -> None:
+        """Subscribe to plain-text state, mapping a cleared retained value to None."""
+
+        def _cb(_: mqtt.Client, __: object, msg: mqtt.MQTTMessage) -> None:
+            try:
+                payload = msg.payload.decode("utf-8")
+            except UnicodeDecodeError:
+                LOGGER.exception("Failed to decode text payload on %s", topic)
+                return
+
+            callback(payload or None)
+
+        self._register_topic_callback(topic, _cb)
+
+    def _register_topic_callback(
+        self,
+        topic: str,
+        callback: Callable[[mqtt.Client, object, mqtt.MQTTMessage], None],
+    ) -> None:
+        self._topics.add(topic)
+        self._client.message_callback_add(topic, callback)
+        self._client.subscribe(topic)
         LOGGER.info("Added callback `%s` for topic: %s", callback.__qualname__, topic)
 
     def loop_forever(self) -> None:
@@ -211,12 +246,14 @@ class MqttClient(metaclass=Singleton):
             topic,
             payload,
             qos=qos,
-            retain=retain or self._retain,
+            retain=self._retain if retain is None else retain,
             properties=properties,
         )
         LOGGER.debug(
             "Published message to topic %s%s: %r",
             topic,
-            " with retain flag set" if retain or self._retain else "",
+            " with retain flag set"
+            if (self._retain if retain is None else retain)
+            else "",
             payload,
         )

@@ -14,6 +14,16 @@ The workflow fetches and runs `scripts/deploy-release.sh` from the selected rele
 
 To redeploy a published stable release containing the deployment script, run **Actions → Deploy MtrxPi Release → Run workflow** from `main` and enter its tag. Deployments to mtrxpi are serialized, and prereleases are excluded. A failed installation or health check fails the deployment; inspect the job output and service journal before retrying.
 
+## Development
+
+Use Python 3.11 and install the locked dependencies with `uv sync --locked`. PyAudio needs PortAudio development headers (`portaudio19-dev` on Debian). The Python and NumPy versions match the Pi deployment; dependency upgrades must retain compatibility with its native matrix bindings.
+
+`make run` starts the controller on the Pi. `make vscode-shortcut-1` starts the controller with the desktop matrix emulator; both use `led_matrix_controller/main.py`. The `rain` target is an alias for `run`, and content selection comes from MQTT.
+
+Unit tests and CodSpeed benchmarks have separate repository-owned workflows. Both install native dependencies in a Python 3.11 container. Unit tests exclude benchmarks; CodSpeed runs only `tests/benchmark`, without coverage or parallel test workers.
+
+Home Assistant discovers the controller’s numeric, enum, boolean and text content settings through retained MQTT configurations under `homeassistant/`. The controller publishes these on broker connection and reconnection, and when Home Assistant announces `online` on `homeassistant/status`. Settings share the MtrxPi device and use stable `mtrxpi_<content>_<setting>` unique IDs and default entity IDs. Retained commands use the setting topics, while actual values are published separately under each topic’s `/state` suffix in the control’s units. Discovery publishes current state alongside configuration, and accepted commands, completed transitions and programmatic changes refresh it without feeding state back into command processing. Connecting preserves saved commands. Home Assistant’s MQTT integration must have discovery enabled with its default prefix and birth topic.
+
 ## Content
 
 All content has the following parameters:
