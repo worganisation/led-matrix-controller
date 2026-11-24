@@ -280,8 +280,15 @@ class ContentBase(ABC, Generic[ContentType]):
 
     @property
     def position(self) -> tuple[int, int]:
-        """Position of the content."""
-        return self.x_pos, self.y_pos
+        """The draw origin clamped to the current frame dimensions.
+
+        Returns:
+            Horizontal and vertical offsets that keep the frame on the panel.
+        """
+        return (
+            max(0, min(self.x_pos, const.MATRIX_WIDTH - self.width)),
+            max(0, min(self.y_pos, const.MATRIX_HEIGHT - self.height)),
+        )
 
     @property
     def shape(self) -> tuple[int, int]:

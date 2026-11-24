@@ -127,10 +127,9 @@ class Combination(DynamicContent):
             content: Child supplying the next frame.
         """
         pixels = content.get_content()
-        destination = self.pixels[
-            content.y_pos : content.y_pos + content.height,
-            content.x_pos : content.x_pos + content.width,
-        ]
+        x, y = content.position
+        height, width = pixels.shape[:2]
+        destination = self.pixels[y : y + height, x : x + width]
         if not self.multiple_opaque and content.IS_OPAQUE:
             if pixels.shape != self.pixels.shape:
                 self.pixels.fill(0)

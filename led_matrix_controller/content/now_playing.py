@@ -112,8 +112,6 @@ class NowPlaying(DynamicContent):
         size = self.size
         if self.width != size or self.height != size:
             self.width = self.height = size
-            self.x_pos = min(self.x_pos, const.MATRIX_WIDTH - size)
-            self.y_pos = min(self.y_pos, const.MATRIX_HEIGHT - size)
             self.pixels = self.zeros()
 
         if not (path := self.file_path) or not (url := self.artwork_uri):

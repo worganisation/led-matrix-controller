@@ -116,4 +116,5 @@ def test_resize_cached_artwork(artwork: NowPlaying) -> None:
     artwork.x_pos = artwork.y_pos = 48
     artwork.size = 64
     assert artwork.get_content() is source
+    artwork.x_pos = artwork.y_pos = 1
     assert artwork.position == (0, 0)
