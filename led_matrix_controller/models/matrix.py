@@ -48,6 +48,9 @@ if TYPE_CHECKING:
 
 LOGGER = get_streaming_logger(__name__)
 
+# The native fast path reads a private Pillow pointer. Both drivers accept this flag positionally.
+_USE_UNSAFE_PILLOW_POINTER: Final = False
+
 
 ContentParameters = MappingProxyType[str, str]
 
@@ -770,7 +773,7 @@ class Matrix:
             else:
                 image = image.convert("RGB")
 
-            canvas.SetImage(image)
+            canvas.SetImage(image, 0, 0, _USE_UNSAFE_PILLOW_POINTER)
 
         return canvas
 
@@ -812,7 +815,7 @@ class Matrix:
 
         image = Image.fromarray(self.array, "RGBA").convert("RGB")
 
-        self.canvas.SetImage(image)
+        self.canvas.SetImage(image, 0, 0, _USE_UNSAFE_PILLOW_POINTER)
 
         self.swap_canvas(self.canvas)
 
