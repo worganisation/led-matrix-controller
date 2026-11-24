@@ -15,6 +15,7 @@ from utils.config import Settings
         ("MAGNITUDE_HISTORY_SIZE", "-1"),
         ("MAX_MAGNITUDE_RELATIVE_STEP", "nan"),
         ("MAX_MAGNITUDE_UPDATE_FREQUENCY", "0"),
+        ("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "file:///tmp/traces"),
         ("MQTT_HOST", "http://homeassistant.local"),
     ],
 )

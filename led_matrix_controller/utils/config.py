@@ -9,7 +9,7 @@ from socket import gethostname
 from sys import platform
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,7 @@ class Settings(BaseSettings):
         "-",
         gethostname().lower(),
     )
+    otel_exporter_otlp_traces_endpoint: AnyHttpUrl | None = None
     debug_mode: bool = False
     rng_seed: Annotated[int, Field(ge=0)] = Field(
         default_factory=lambda: int(datetime.now(UTC).timestamp()),

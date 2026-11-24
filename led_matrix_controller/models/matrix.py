@@ -35,6 +35,7 @@ from content.setting import Setting, TransitionableParameterSetting
 from PIL import Image
 from utils import const, mtrx
 from utils.helpers import to_kebab_case
+from utils.tracing import frame_trace
 from wg_utilities.decorators import process_exception
 from wg_utilities.loggers import get_streaming_logger
 
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
     from numpy.typing import DTypeLike, NDArray
+    from opentelemetry.trace import Span, Tracer
     from utils.mqtt import MqttClient
 
     from .led_matrix_options import LedMatrixOptions
@@ -271,8 +273,11 @@ class Matrix:
         mqtt_client: MqttClient,
         content_works_with: dict[type[ContentBase[Any]], set[type[ContentBase[Any]]]],
         options: LedMatrixOptions = OPTIONS,
+        tracer: Tracer | None = None,
     ) -> None:
         self.mqtt_client = mqtt_client
+        self._tracer = tracer
+        self._next_frame_trace = 0.0
         self.content_works_with = content_works_with
 
         self._brightness_setting = TransitionableParameterSetting(
@@ -744,14 +749,27 @@ class Matrix:
             )
         self.current_content = None
 
-        self.canvas.Clear()
-        self.swap_canvas()
+        with frame_trace(self._tracer, "blank", "none") as span:
+            self.canvas.Clear()
+            if span is not None:
+                span.add_event("canvas.cleared")
+
+            self.swap_canvas(span=span)
 
         LOGGER.info("Matrix cleared")
 
     def get_canvas_swap_canvas(self) -> None:
         """Get the canvas and swap it."""
-        self.swap_canvas(self.current_content.get_content())  # type: ignore[union-attr]
+        with frame_trace(
+            self._sample_tracer(),
+            "prepared",
+            type(self.current_content).__name__,
+        ) as span:
+            canvas = self.current_content.get_content()  # type: ignore[union-attr]
+            if span is not None:
+                span.add_event("canvas.selected")
+
+            self.swap_canvas(canvas, span=span)
 
     def new_canvas(self, image: Image.Image | None = None) -> mtrx.Canvas:
         """Return a new canvas, optionally with an image."""
@@ -802,26 +820,62 @@ class Matrix:
 
     def set_image_swap_canvas(self) -> None:
         """Set the image and swap the canvas."""
-        content_array = self.current_content.get_content()  # type: ignore[union-attr]
+        with frame_trace(
+            self._sample_tracer(),
+            "dynamic",
+            type(self.current_content).__name__,
+        ) as span:
+            content_array = self.current_content.get_content()  # type: ignore[union-attr]
 
-        self.array.fill(0)
+            self.array.fill(0)
 
-        x, y = self.current_content.position  # type: ignore[union-attr]
+            x, y = self.current_content.position  # type: ignore[union-attr]
 
-        self.array[
-            y : y + self.current_content.height,  # type: ignore[union-attr]
-            x : x + self.current_content.width,  # type: ignore[union-attr]
-        ] = content_array
+            self.array[
+                y : y + self.current_content.height,  # type: ignore[union-attr]
+                x : x + self.current_content.width,  # type: ignore[union-attr]
+            ] = content_array
 
-        image = Image.fromarray(self.array, "RGBA").convert("RGB")
+            image = Image.fromarray(self.array, "RGBA").convert("RGB")
 
-        self.canvas.SetImage(image, 0, 0, _USE_UNSAFE_PILLOW_POINTER)
+            if span is not None:
+                span.add_event("image.prepared")
 
-        self.swap_canvas(self.canvas)
+            self.canvas.SetImage(image, 0, 0, _USE_UNSAFE_PILLOW_POINTER)
 
-    def swap_canvas(self, content: mtrx.Canvas | None = None, /) -> None:
-        """Update the content of the canvas and increment the tick count."""
+            if span is not None:
+                span.add_event("canvas.uploaded")
+
+            self.swap_canvas(self.canvas, span=span)
+
+    def _sample_tracer(self) -> Tracer | None:
+        """Select at most one active frame per thirty seconds.
+
+        Returns:
+            The exporter-backed tracer when the sampling interval has elapsed.
+        """
+        if self._tracer is None or (now := monotonic()) < self._next_frame_trace:
+            return None
+
+        self._next_frame_trace = now + 30
+        return self._tracer
+
+    def swap_canvas(
+        self,
+        content: mtrx.Canvas | None = None,
+        /,
+        *,
+        span: Span | None = None,
+    ) -> None:
+        """Swap at VSync and wake the tick consumers.
+
+        Args:
+            content: Prepared canvas, defaulting to the drawing canvas.
+            span: Sampled frame receiving the swap completion time.
+        """
         self.canvas = self.matrix.SwapOnVSync(content or self.canvas)
+        if span is not None:
+            span.add_event("vsync.complete")
 
         self.tick += 1
 
