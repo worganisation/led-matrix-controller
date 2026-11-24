@@ -88,6 +88,7 @@ class RainingGrid(Automaton):
             fp_precision=4,
             # Anything above 0.1 is too much rain!
             payload_modifier=lambda x, _: x / 1000,
+            state_modifier=lambda x: x * 1000,
             icon="mdi:cloud-percent-outline",
             unit_of_measurement="%",
             value_callbacks={0: stop_when_no_rain},
@@ -136,6 +137,7 @@ class RainingGrid(Automaton):
             icon="mdi:flower",
             unit_of_measurement="%",
             payload_modifier=lambda x, _: x / 100,
+            state_modifier=lambda x: x * 100,
         ),
     ] = 0.01
 
@@ -155,8 +157,9 @@ class RainingGrid(Automaton):
             minimum=1,
             maximum=const.seconds_to_ticks(300),  # 5 minutes
             icon="mdi:flower",
-            unit_of_measurement="ticks",
+            unit_of_measurement="s",
             payload_modifier=const.seconds_to_ticks,
+            state_modifier=const.ticks_to_seconds,
         ),
     ] = const.seconds_to_ticks(10)
 
@@ -168,6 +171,7 @@ class RainingGrid(Automaton):
             icon="mdi:flower",
             unit_of_measurement="%",
             payload_modifier=lambda x, _: x / 100,
+            state_modifier=lambda x: x * 100,
             invoke_settings_callback=True,
         ),
     ] = 0.005
