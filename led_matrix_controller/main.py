@@ -19,7 +19,9 @@ from content import (
 from content.dynamic_content import DynamicContent
 from models import Matrix
 from utils import MqttClient
+from utils.config import SETTINGS
 from utils.mqtt_discovery import register_discovery
+from utils.tracing import display_tracer
 from wg_utilities.loggers import get_streaming_logger
 
 LOGGER = get_streaming_logger(__name__)
@@ -44,7 +46,7 @@ def get_library() -> tuple[ContentBase[Any], ...]:
 
 
 def main() -> None:
-    """Run the rain simulation."""
+    """Run the MQTT-controlled display and its configured trace exporter."""
     mqtt_client = MqttClient(connect=True)
 
     library = get_library()
@@ -62,6 +64,9 @@ def main() -> None:
     Matrix(
         mqtt_client=mqtt_client,
         content_works_with=works_with,
+        tracer=display_tracer(
+            str(url) if (url := SETTINGS.otel_exporter_otlp_traces_endpoint) else None,
+        ),
     ).register_content(
         *library,
     )

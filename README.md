@@ -24,6 +24,15 @@ Unit tests and CodSpeed benchmarks have separate repository-owned workflows. Bot
 
 Home Assistant discovers the controller’s numeric, enum, boolean and text content settings through retained MQTT configurations under `homeassistant/`. The controller publishes these on broker connection and reconnection, and when Home Assistant announces `online` on `homeassistant/status`. Settings share the MtrxPi device and use stable `mtrxpi_<content>_<setting>` unique IDs and default entity IDs. Retained commands use the setting topics, while actual values are published separately under each topic’s `/state` suffix in the control’s units. Discovery publishes current state alongside configuration, and accepted commands, completed transitions and programmatic changes refresh it without feeding state back into command processing. Connecting preserves saved commands. Home Assistant’s MQTT integration must have discovery enabled with its default prefix and birth topic.
 
+## Frame tracing
+
+Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://10.0.0.110:4318/v1/traces` in the controller service's `.env` to export traces to Alloy. Apply the [observability guest firewall configuration](https://github.com/worganisation/infrastructure/blob/main/docs/observability.md#display-traces) before enabling export on mtrxpi. Leaving the variable unset disables tracing. The audio processor shares the settings file; only the display controller starts an exporter.
+
+In Grafana Explore, select **Application traces** and run `{ resource.service.name = "led-matrix-controller" && name = "matrix.frame" }`. The controller samples the first active frame and at most one active frame every 30 seconds thereafter. It also records each attempt to blank the panel. An idle display can go hours without a frame. The existing MQTT render-progress heartbeat continues during rendering.
+
+Filter on `span.matrix.frame.kind` for `dynamic`, `prepared`, or `blank`. A dynamic trace starts when the renderer requests the content pixels. Its events mark completion of image preparation, upload to the canvas, and the blocking VSync swap. Compare adjacent event timestamps to isolate panel upload cost. Prepared frames mark canvas selection and VSync; blank frames mark canvas clearing and VSync. A successful swap confirms the driver returned, while a physical display fault still requires observation of the panel.
+
+
 ## Content
 
 All content has the following parameters:
