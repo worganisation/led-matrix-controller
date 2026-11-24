@@ -13,51 +13,64 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  CACHE_FILE: poetry.lock
+concurrency:
+  group: codspeed-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   benchmarks:
     name: Run Benchmarks
-    runs-on: ubuntu-latest
-    if: >-
-      !github.event.pull_request.draft
+    permissions:
+      contents: read
+      id-token: write
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - cc
+      - iac
+      - opentofu
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    timeout-minutes: 20
+    container:
+      image: python:3.11-slim-bookworm
+      # CodSpeed uses setarch to disable ASLR for its Valgrind simulation.
+      options: --security-opt seccomp=unconfined
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      UV_PROJECT_ENVIRONMENT: /tmp/mtrxpi-venv
+      PYTEST_ADDOPTS: -o cache_dir=/tmp/mtrxpi-pytest-cache
     steps:
-      - name: Clone Repo
-        uses: actions/checkout@v4
+      - name: Restore workspace ownership
+        run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Load cached .local
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: dotlocal
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load Cached Venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ hashFiles(env.CACHE_FILE) }}
-
-      - name: Install Dependencies
+      - name: Install native build dependencies
         run: |
-          sudo apt-get install -y portaudio19-dev
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential git portaudio19-dev curl ca-certificates
 
-          poetry install --sync
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: false
+          cache-local-path: /tmp/mtrxpi-uv-cache
+
+      - name: Install Python dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Trust checkout for benchmark metadata
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
       - name: Run Benchmarks
-        uses: CodSpeedHQ/action@v3
+        uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
-          token: ${{ secrets.CODSPEED_TOKEN }}
-          run: poetry run pytest --codspeed -v
+          mode: simulation
+          cache-instruments: false
+          run: uv run --no-sync pytest tests/benchmark --codspeed -n 0 --no-cov
+
+      - name: Restore workspace ownership
+        if: always()
+        run: chown -R "$(stat -c '%u:%g' "$(dirname "${GITHUB_WORKSPACE}")")" "${GITHUB_WORKSPACE}"

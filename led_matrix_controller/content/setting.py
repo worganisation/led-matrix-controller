@@ -6,12 +6,11 @@ import math
 from dataclasses import dataclass, field
 from enum import StrEnum, auto
 from json import dumps
-from threading import Thread
-from time import sleep
+from threading import RLock, Thread
+from time import monotonic
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     ClassVar,
     Generic,
     Literal,
@@ -26,7 +25,7 @@ from utils.mqtt import MqttClient
 from wg_utilities.loggers import get_streaming_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from models.matrix import Matrix
 
@@ -82,6 +81,12 @@ class Setting(Generic[S]):
     Allows for scaling, conversion, etc. relative to Home Assistant's inputs.
     """
 
+    state_modifier: Callable[[S], str | int | float | bool] | None = None
+    """Convert an internal value back to the units used by MQTT controls."""
+
+    state_topic: str | None = field(default=None, init=False, repr=False)
+    """Dedicated state topic assigned when discovery exposes this setting."""
+
     type_: type[S] = field(init=False, repr=False)
     """The type of the setting's value (e.g. int, float, bool)."""
 
@@ -122,8 +127,7 @@ class Setting(Generic[S]):
     """The MQTT client to use for this setting."""
 
     def __post_init__(self) -> None:
-        if not hasattr(self.__class__, "_MQTT_CLIENT"):
-            self.__class__._MQTT_CLIENT = MqttClient()  # noqa: SLF001
+        self.state_topic = None
 
         if (
             self.minimum is not None
@@ -163,7 +167,7 @@ class Setting(Generic[S]):
 
         self.matrix.publish_attributes()
 
-    def on_message(self, raw_payload: S) -> None:  # noqa: C901
+    def on_message(self, raw_payload: S) -> None:  # ruff:ignore[complex-structure]
         """Handle an MQTT message.
 
         Args:
@@ -214,9 +218,12 @@ class Setting(Generic[S]):
                 )
                 return
 
-        if payload != self.value:
+        if payload != self.value or (
+            isinstance(self, TransitionableSettingMixin)
+            and getattr(self, "target_value", payload) != payload
+        ):
             self._set_value_from_payload(payload)
-        elif payload != raw_payload:
+        elif payload != raw_payload and self.state_topic is None:
             # e.g. out of bounds value was coerced to min/max
             try:
                 mqtt_payload = dumps(payload)
@@ -237,6 +244,24 @@ class Setting(Generic[S]):
         else:
             # Exact same message retrieved
             LOGGER.debug("Value unchanged: %r", payload)
+
+        self.publish_state()
+
+    @property
+    def state_value(self) -> S | str | int | float | bool:
+        """Current value in the units expected by the MQTT control."""
+        value = self.state_modifier(self.value) if self.state_modifier else self.value
+        return round(value, self.fp_precision) if isinstance(value, float) else value
+
+    def publish_state(self) -> None:
+        """Report actual state without sending it back through command processing."""
+        if self.state_topic is not None:
+            self.mqtt_client.publish(
+                self.state_topic,
+                dumps(self.state_value),
+                qos=1,
+                retain=True,
+            )
 
     def setup(
         self,
@@ -328,7 +353,10 @@ class Setting(Generic[S]):
     @property
     def mqtt_client(self) -> MqttClient:
         """The MQTT client to use for this setting."""
-        return self.__class__._MQTT_CLIENT  # noqa: SLF001
+        if not hasattr(self.__class__, "_MQTT_CLIENT"):
+            self.__class__._MQTT_CLIENT = MqttClient()  # ruff:ignore[private-member-access]
+
+        return self.__class__._MQTT_CLIENT  # ruff:ignore[private-member-access]
 
     _mqtt_topic: str = field(init=False, repr=False)
 
@@ -354,7 +382,7 @@ class Setting(Generic[S]):
 
     @property
     def value(self) -> S:
-        """Get the setting's value from the automaton's attribute."""
+        """Setting value from the automaton's attribute."""
         return cast("S", getattr(self.instance, self.slug))
 
     @value.setter
@@ -411,83 +439,75 @@ class TransitionableSettingMixin(Setting[N]):
 
         return super().__post_init__()
 
+    _transition_lock: RLock = field(default_factory=RLock, init=False, repr=False)
+    _transition_running: bool = field(default=False, init=False, repr=False)
+
     def _set_value_from_payload(self, payload: N) -> None:
-        """Set the value of the setting from the payload."""
-        # Only transition if the automaton is currently displaying and a transition rate is set
-        if self.instance.active and (self.transition_rate or 0) > 0:
-            LOGGER.debug("Set target value to %r", payload)
+        """Replace the target atomically, starting at most one transition worker."""
+        with self._transition_lock:
             self.target_value = payload
 
-            if not (
-                hasattr(self, "transition_thread") and self.transition_thread.is_alive()
-            ):
-                self.transition_thread = Thread(
-                    target=self._transition_worker,
-                    name=f"{self.slug}_transition",
-                )
-                self.transition_thread.start()
-                LOGGER.debug("Started transition thread")
-            else:
-                LOGGER.debug("Transition thread already running")
-        else:
-            Setting._set_value_from_payload(self, payload)  # noqa: SLF001
+            if not self.instance.active or not self.transition_rate:
+                Setting._set_value_from_payload(self, payload)  # ruff:ignore[private-member-access]
+                return
+
+            if self._transition_running:
+                return
+
+            self._transition_running = True
+            self.transition_thread = Thread(
+                target=self._transition_worker,
+                name=f"{self.slug}_transition",
+                daemon=True,
+            )
+            self.transition_thread.start()
 
     def _transition_worker(self) -> None:
-        LOGGER.info("Transitioning %s to %s", self.slug, self.target_value)
+        """Log failures without leaving a permanently registered worker."""
+        try:
+            self._run_transition()
+        except Exception:
+            with self._transition_lock:
+                self._transition_running = False
 
-        tick_condition = self.matrix.tick_condition
-        tick_condition.acquire()
-
-        cc = self.matrix.current_content
-
-        if self.type_ is int:
-            # Wait until accumulated change reaches 1
-            ticks_between_transitions = math.ceil(1 / self.transition_rate)
-
-            transition_amount: N = 1
-        else:
-            # Wait until accumulated change reaches the specified precision
-            precision_value = 10**-self.fp_precision
-            ticks_between_transitions = math.ceil(precision_value / self.transition_rate)
-
-            transition_amount = ticks_between_transitions * self.transition_rate
-
-        direction = 1 if self.target_value > self.value else -1
-        while self.value != self.target_value:
-            if self.matrix.tick % ticks_between_transitions == 0:
-                self.value = round(
-                    self.value
-                    + min(transition_amount, abs(self.value - self.target_value))
-                    * direction,
-                    self.fp_precision,
-                )
-
-            if not (cc and cc.is_sleeping):
-                # If the content is sleeping, then it isn't yielding, so the canvas isn't being
-                # swapped, and that means that no ticks are happening...
-                # So only wait for a tick notification if the content is not sleeping!
-                tick_condition.wait()
-            else:
-                sleep(const.TICK_LENGTH)
-
-        tick_condition.release()
-
-        LOGGER.info(
-            'Transition complete: %s("%s").%s = %s',
-            self.instance.__class__.__name__,
-            self.instance.id,
-            self.slug,
-            self.value,
-        )
+            LOGGER.exception("Failed to transition setting %s", self.slug)
+            return
 
         self.matrix.publish_attributes()
+        self.publish_state()
 
-        if self.value != self.target_value:
-            self.mqtt_client.publish(
-                self.mqtt_topic,
-                self.value,
-                retain=True,
-            )
+    def _run_transition(self) -> None:
+        """Advance on a bounded clock even when the renderer is idle or sleeping."""
+        precision = 1 if self.type_ is int else 10**-self.fp_precision
+        ticks_per_step = max(1, math.ceil(precision / self.transition_rate))
+        interval = ticks_per_step * const.TICK_LENGTH
+        amount = ticks_per_step * self.transition_rate
+        next_step = monotonic()
+
+        while True:
+            with self._transition_lock:
+                if not self.instance.active and self.value != self.target_value:
+                    self.value = self.target_value
+
+                if self.value == self.target_value:
+                    # Clear this under the target lock so a new request starts a worker.
+                    self._transition_running = False
+                    break
+
+                if monotonic() >= next_step:
+                    delta = self.target_value - self.value
+                    self.value = self._coerce_and_format(
+                        round(
+                            self.value
+                            + min(amount, abs(delta)) * (1 if delta > 0 else -1),
+                            self.fp_precision,
+                        ),
+                    )
+                    next_step = monotonic() + interval
+
+            # Condition.wait releases the renderer's lock and always has a timeout.
+            with self.matrix.tick_condition:
+                self.matrix.tick_condition.wait(timeout=const.TICK_LENGTH)
 
 
 @dataclass(kw_only=True)

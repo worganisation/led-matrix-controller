@@ -4,50 +4,48 @@ default_language_version:
 
 repos:
   - repo: https://github.com/worgarside/pre-commit-hooks-dependency-sync
-    rev: 1.2.1
+    rev: 1.5.1
     hooks:
       - id: sync-additional-dependencies
+        args:
+          - --package-manager
+          - uv
+          - --lockfile-path
+          - uv.lock
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.2
+    rev: v0.16.1
     hooks:
       - id: ruff-format
-      - id: ruff
+      - id: ruff-check
+        language_version: python3.11
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
+    rev: v2.3.0
     hooks:
       - id: mypy
         args:
           - --strict
           - --show-error-codes
         additional_dependencies:
-          - httpx==0.28.1
+          - aiohttp==3.14.5
+          - pydantic-settings==2.16.1
           - numpy==2.0.1
           - paho-mqtt==2.1.0
-          - pytest==8.3.4
-          - pytest-codspeed==3.1.0
-          - types-Pillow
-          - wg-utilities==5.17.1
-          - rgbmatrixemulator==0.11.6
-          - types-pyaudio==0.2.16.20240516
-          - scipy-stubs==1.14.1.5
+          - pytest==9.1.1
+          - pytest-codspeed==3.2.0
+          - wg-utilities==5.17.4
+          - rgbmatrixemulator==0.13.5
+          - types-pyaudio==0.2.16.20260508
+          - scipy-stubs==1.17.1.5
 
-  - repo: https://github.com/python-poetry/poetry
-    rev: 1.8.0
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.32
     hooks:
-      - id: poetry-check
-      - id: poetry-export
-        additional_dependencies:
-          - poetry-plugin-export
-        args:
-          - -f
-          - requirements.txt
-          - -o
-          - requirements.txt
+      - id: uv-lock
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-case-conflict
       - id: end-of-file-fixer
@@ -75,7 +73,7 @@ repos:
           - '4096'
 
   - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.35.1
+    rev: v1.38.0
     hooks:
       - id: yamllint
         args:
@@ -89,18 +87,18 @@ repos:
       - id: python-check-blanket-type-ignore
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.3
     hooks:
       - id: codespell
         additional_dependencies:
-          - tomli==2.0.1
+          - tomli==2.4.1
 
   - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.14
+    rev: v2.16
     hooks:
       - id: vulture
 
   - repo: https://github.com/fredrikaverpil/creosote
-    rev: v3.2.0
+    rev: v5.2.0
     hooks:
       - id: creosote

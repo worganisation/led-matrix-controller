@@ -2,19 +2,45 @@
 
 from __future__ import annotations
 
-import dataclasses
 from itertools import islice, product
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 from content import RainingGrid
+from utils import const
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Generator
+
     from content.automaton import MaskGen
     from pytest_codspeed import BenchmarkFixture
 
 SIZES = [16]
 LIMITS = [50]
+
+
+@pytest.fixture
+def grid(
+    size: int,
+    test_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[RainingGrid, None, None]:
+    """Stop each benchmark's simulation worker when the test finishes."""
+    monkeypatch.setattr(const, "RNG", np.random.default_rng(0))
+    simulation = RainingGrid(
+        height=size,
+        width=size,
+        rain_chance=0.025,
+        rain_speed=1,
+        splash_speed=1,
+        id_override=test_id,
+    )
+
+    yield simulation
+
+    if hasattr(simulation, "_rules_thread"):
+        simulation._stop_rules_thread()
 
 
 @pytest.mark.parametrize(
@@ -34,19 +60,10 @@ LIMITS = [50]
 )
 def test_raining_grid_simulation(
     benchmark: BenchmarkFixture,
-    size: int,
+    grid: RainingGrid,
     limit: int,
-    test_id: str,
 ) -> None:
     """Benchmark the CA."""
-    grid = RainingGrid(
-        height=size,
-        width=size,
-        rain_chance=0.025,
-        rain_speed=1,
-        splash_speed=1,
-        id_override=test_id,
-    )
 
     @benchmark
     def bench() -> None:
@@ -74,37 +91,24 @@ def test_raining_grid_simulation(
 )
 def test_rules(
     benchmark: BenchmarkFixture,
+    grid: RainingGrid,
     size: int,
     limit: int,
     rule: Callable[..., MaskGen],
-    test_id: str,
 ) -> None:
     """Test/benchmark each individual rule."""
-    grid = RainingGrid(
-        height=size,
-        width=size,
-        rain_chance=0.025,
-        rain_speed=1,
-        splash_speed=1,
-        id_override=test_id,
-    )
-
     # Discard the first `size` frames so all rules are effective (e.g. splashing)
     for _ in islice(grid, size + 10):
         pass
 
     expected_frame_index = size + 9
     assert grid.frame_index == expected_frame_index
-    expected_frame_index += 1
+    frames = [grid.pixels.copy() for _ in islice(grid, limit)]
 
-    grids_to_eval = [
-        dataclasses.replace(grid, id_override=f"{test_id}-{i}")
-        for i, _ in enumerate(islice(grid, limit))
-    ]
-
-    mask_generators = [rule(grid) for grid in grids_to_eval]
+    grid._stop_rules_thread()
+    mask_gen = rule(grid)
 
     @benchmark
     def bench() -> None:
-        for mask_gen in mask_generators:
-            mask_gen(grid.pixels)
+        for pixels in frames:
+            mask_gen(pixels)

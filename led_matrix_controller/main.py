@@ -16,8 +16,10 @@ from content import (
     RainingGrid,
     Sorter,
 )
+from content.dynamic_content import DynamicContent
 from models import Matrix
 from utils import MqttClient
+from utils.mqtt_discovery import register_discovery
 from wg_utilities.loggers import get_streaming_logger
 
 LOGGER = get_streaming_logger(__name__)
@@ -31,7 +33,8 @@ def get_library() -> tuple[ContentBase[Any], ...]:
     return (
         Clock(),
         Combination(),
-        GifViewer(path=Path("door/animated.gif")),
+        GifViewer(path=Path("door/animated.gif"), frame_multiplier=2),
+        GifViewer(path=Path("alert/bell.gif"), frame_multiplier=10),
         ImageViewer(path=Path("door/closed.bmp"), display_seconds=5),
         NowPlaying(),
         RainingGrid(),
@@ -42,7 +45,6 @@ def get_library() -> tuple[ContentBase[Any], ...]:
 
 def main() -> None:
     """Run the rain simulation."""
-    # Needs to be before the content library, idk why :(
     mqtt_client = MqttClient(connect=True)
 
     library = get_library()
@@ -62,6 +64,11 @@ def main() -> None:
         content_works_with=works_with,
     ).register_content(
         *library,
+    )
+
+    register_discovery(
+        mqtt_client,
+        (content for content in library if isinstance(content, DynamicContent)),
     )
 
     mqtt_client.loop_forever()

@@ -1,18 +1,18 @@
-"""Windows Media Player? ;_;"""  # noqa: D415
+"""Windows Media Player? ;_;"""  # ruff:ignore[missing-terminal-punctuation]
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from json import dumps
-from multiprocessing import shared_memory  # noqa: TC003
 from typing import TYPE_CHECKING, Annotated, Final
 
 import numpy as np
 from content.setting import ParameterSetting, TransitionableParameterSetting
-from numpy.typing import NDArray  # noqa: TC002
-from scipy.fftpack import rfftfreq
-from utils import const, get_shared_memory, hex_to_rgba
+from numpy.typing import NDArray  # ruff:ignore[typing-only-third-party-import]
+from scipy.fft import rfftfreq
+from utils import const, hex_to_rgba
+from utils.helpers import MAX_AUDIO_CHUNK_SIZE, AudioFrameBuffer
 from wg_utilities.loggers import get_streaming_logger
 
 from .dynamic_content import DynamicContent
@@ -131,9 +131,12 @@ class AudioVisualiser(DynamicContent):
         ),
     ] = "#FF0000FF"
 
-    freq_bin_indices: NDArray[np.int_] = field(init=False, repr=False)
+    _frequency_mapping: tuple[int, int, NDArray[np.int_]] = field(init=False, repr=False)
 
-    shm: shared_memory.SharedMemory = field(init=False, repr=False)
+    @property
+    def freq_bin_indices(self) -> NDArray[np.int_]:
+        """Frequency indices for the current complete mapping."""
+        return self._frequency_mapping[2]
 
     sample_rate: Annotated[
         int,
@@ -151,7 +154,7 @@ class AudioVisualiser(DynamicContent):
         int,
         ParameterSetting(
             minimum=1,
-            maximum=20000,
+            maximum=MAX_AUDIO_CHUNK_SIZE,
             invoke_settings_callback=True,
             icon="mdi:table-split-cell",
             unit_of_measurement="",
@@ -162,11 +165,6 @@ class AudioVisualiser(DynamicContent):
     Set to 441 to allow for 100 FPS updates.
     """
 
-    _refresh_audio_array: bool = field(default=False, init=False, repr=False)
-    """Whether to refresh the audio array.
-
-    Used when the chunk size (and thus the shape of the array) is updated."""
-
     def __post_init__(self) -> None:
         """Initialize the audio visualiser."""
         DynamicContent.__post_init__(self)
@@ -174,25 +172,33 @@ class AudioVisualiser(DynamicContent):
         self.update_colormap()
         self.update_frequency_foci()
 
-        self.shm = get_shared_memory(logger=LOGGER, close_at_exit=False)
-
     def refresh_content(self) -> Generator[None, None, None]:
-        """Refresh the content."""
-        self._refresh_audio_array = True
+        """Continuously updates the visualizer's pixel grid with audio frequency magnitudes.
 
-        while self.active:
-            if self._refresh_audio_array:
-                audio: NDArray[np.float64] = np.ndarray(
-                    shape=(self.chunk_size // 2 + 1,),
-                    dtype=np.float64,
-                    buffer=self.shm.buf,
-                )
-                self._refresh_audio_array = False
+        While active, reads audio data from shared memory, maps magnitudes to colormap indices,
+        and updates the display grid based on frequency bin mappings. Yields control after each update
+        to allow asynchronous operation.
+        """
+        frames = AudioFrameBuffer()
+        audio = np.empty(0, dtype=np.float64)
+        try:
+            while self.active:
+                chunk_size, sample_rate, indices = self._frequency_mapping
+                if audio.size != chunk_size // 2 + 1:
+                    audio = np.zeros(chunk_size // 2 + 1, dtype=np.float64)
 
-            audio_ints = (audio * (self.colormap_length - 1)).astype(np.int_)
-            self.pixels[:, :] = audio_ints[self.freq_bin_indices]
+                if not frames.read(audio, chunk_size, sample_rate):
+                    audio.fill(0)
 
-            yield
+                audio_ints = np.clip(
+                    audio * self.colormap_length,
+                    0,
+                    len(self.colormap) - 1,
+                ).astype(np.int_)
+                self.pixels[:, :] = audio_ints[indices]
+                yield
+        finally:
+            frames.close()
 
     def setting_update_callback(self, update_setting: str | None = None) -> None:
         """Update the colormap."""
@@ -212,9 +218,6 @@ class AudioVisualiser(DynamicContent):
             "chunk_size",
         }:
             self.update_frequency_foci()
-
-        if update_setting in {"chunk_size", "cutoff_frequency"}:
-            self._refresh_audio_array = True
 
     def update_colormap(self) -> None:
         """Update the colormap."""
@@ -266,16 +269,26 @@ class AudioVisualiser(DynamicContent):
         total_distance = dist_low + dist_high
 
         # Normalize distances to range [0, 1]
-        normalized_distances = dist_high / total_distance
+        normalized_distances = np.divide(
+            dist_high,
+            total_distance,
+            out=np.zeros_like(total_distance),
+            where=total_distance != 0,
+        )
 
-        freqs = rfftfreq(self.chunk_size, 1 / self.sample_rate)
+        chunk_size, sample_rate = self.chunk_size, self.sample_rate
+        freqs = rfftfreq(chunk_size, 1 / sample_rate)
         cutoff_idx = min(
             np.where(freqs <= self.cutoff_frequency)[0][-1],
-            self.chunk_size // 2,
+            chunk_size // 2,
         )
 
         # Map normalized distances to frequency bin indices
         freq_bin_indices = (normalized_distances * cutoff_idx).astype(int)
 
         # Ensure indices are within valid range
-        self.freq_bin_indices = np.clip(freq_bin_indices, 0, cutoff_idx)
+        self._frequency_mapping = (
+            chunk_size,
+            sample_rate,
+            np.clip(freq_bin_indices, 0, cutoff_idx),
+        )

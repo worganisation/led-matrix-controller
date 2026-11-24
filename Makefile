@@ -1,27 +1,23 @@
-include .env
+-include .env
 export
 
 # Set AP to 0 to disable audio processor inclusion in commands
 AP ?= 0
 
+# Python executable path - defaults to virtualenv, can be overridden
+PYTHON ?= $(shell pwd)/.venv/bin/python
+
 clean:
 	sudo rm -rf .venv
-	sudo rm -rf rpi-rgb-led-matrix
+	git submodule update --init --recursive
+	cd rpi-rgb-led-matrix && git reset --hard && git clean -fd
 
 create:
-	virtualenv -p 3.11 .venv
 	$(MAKE) install-all
 
 	sudo mkdir -p /var/cache/led-matrix-controller
 	sudo chown -R root:root /var/cache/led-matrix-controller
 	sudo chmod -R 777 /var/cache/led-matrix-controller
-
-	git clone https://github.com/hzeller/rpi-rgb-led-matrix.git
-
-	$(MAKE) -C rpi-rgb-led-matrix/bindings/python build-python PYTHON=/home/pi/led-matrix-controller/.venv/bin/python
-	$(MAKE) -C rpi-rgb-led-matrix/bindings/python install-python PYTHON=/home/pi/led-matrix-controller/.venv/bin/python
-
-	sudo rm -rf rpi-rgb-led-matrix
 
 dev-update:
 	@$(MAKE) update
@@ -49,7 +45,12 @@ enable-ap:
 	sudo systemctl enable audio_processor.service
 
 install-python:
-	.venv/bin/pip install -r requirements.txt
+	uv sync --locked --no-default-groups --inexact
+
+install-matrix:
+	git submodule update --init --recursive
+	$(MAKE) -C rpi-rgb-led-matrix/bindings/python build-python PYTHON=$(PYTHON)
+	$(MAKE) -C rpi-rgb-led-matrix/bindings/python install-python PYTHON=$(PYTHON)
 
 install-service:
 	sudo cp service/led_matrix_controller.service /etc/systemd/system/
@@ -67,10 +68,13 @@ install-service-ap:
 
 install-all:
 	@$(MAKE) install-python
+	@$(MAKE) install-matrix
 	@$(MAKE) install-service
 
-rain:
-	sudo .venv/bin/python led_matrix_controller/rain.py
+deploy:
+	@bash scripts/deploy-release.sh "$(TAG)"
+
+rain: run
 
 restart:
 	sudo systemctl restart led_matrix_controller.service
@@ -83,7 +87,7 @@ restart-ap:
 	sudo systemctl restart audio_processor.service
 
 run:
-	sudo .venv/bin/python led_matrix_controller/application/controller/led_matrix_controller.py
+	sudo $(PYTHON) led_matrix_controller/main.py
 
 start:
 	sudo systemctl start led_matrix_controller.service
@@ -112,14 +116,15 @@ tail-ap:
 	clear && sudo journalctl -u audio_processor.service -f -n 100
 
 test:
-	poetry run pytest
+	uv run pytest
 
 update:
 	git add .
 	git stash save "Stash before update @ $(shell date)"
 	git pull --prune
+	git submodule update --init --recursive
 	@$(MAKE) install-all
 
 
 vscode-shortcut-1:
-	poetry run python led_matrix_controller/rain.py
+	DEBUG_MODE=1 uv run python led_matrix_controller/main.py

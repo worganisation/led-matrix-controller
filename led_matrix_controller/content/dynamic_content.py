@@ -41,7 +41,7 @@ class DynamicContent(ContentBase[GridView], ABC):
                 include_extras=True,
             )
         except TypeError:
-            LOGGER.error("Failed to get type hints for %s", self.__class__.__name__)  # noqa: TRY400
+            LOGGER.error("Failed to get type hints for %s", self.__class__.__name__)  # ruff:ignore[error-instead-of-exception]
             raise
 
         for field_name, field_type in type_hints.items():
@@ -56,11 +56,38 @@ class DynamicContent(ContentBase[GridView], ABC):
                     self.settings[annotation.slug] = annotation
 
     def get_content(self) -> GridView:
-        """Convert the pixels to an image."""
-        return self.colormap[self.pixels]
+        """Converts the pixel array to an image using the colormap.
+
+        If pixel values exceed the colormap bounds, rescales them to fit within the valid range before conversion.
+        """
+        try:
+            return self.colormap[self.pixels]
+        except IndexError as err:
+            # This is usually due to an increase in magnitude, which then causes the pixels values
+            # to exceed the colormap bounds
+            LOGGER.warning(
+                "IndexError in get_content for %s. Pixel values exceed colormap bounds. Scaling down. %s",
+                self.__class__.__name__,
+                err,
+            )
+            colormap_size = self.colormap.shape[0]
+
+            # Scale values to fit within the colormap range [0, colormap_size - 1]
+            scaled_pixels = (
+                self.pixels / np.max(self.pixels) * (colormap_size - 1)
+            ).astype(self.pixels.dtype)  # Preserving original dtype, ensure it's int
+
+            return self.colormap[scaled_pixels]
 
     def zeros(self, *, dtype: DTypeLike = np.int_) -> NDArray[Any]:
-        """Return a grid of zeros."""
+        """Returns a zero-filled grid array matching the content's height and width.
+
+        Args:
+                dtype: Data type of the returned array (default: int).
+
+        Returns:
+                A NumPy array of zeros with shape (height, width).
+        """
         return np.zeros((self.height, self.width), dtype=dtype)
 
     @abstractmethod
@@ -80,10 +107,10 @@ class DynamicContent(ContentBase[GridView], ABC):
         setting.value = value
 
         payload = dumps(
-            setting.value,
-            default=lambda x: x.id
-            if isinstance(x, ContentBase)
-            else self._json_encode(x),
+            setting.state_value if setting.state_topic else setting.value,
+            default=lambda x: (
+                x.id if isinstance(x, ContentBase) else self._json_encode(x)
+            ),
         )
 
         LOGGER.debug("Sending payload %r to topic %r", payload, setting.mqtt_topic)
@@ -94,7 +121,9 @@ class DynamicContent(ContentBase[GridView], ABC):
             retain=True,
         )
 
-        if invoke_callback:
+        setting.publish_state()
+
+        if invoke_callback and not setting.invoke_settings_callback:
             self.setting_update_callback(update_setting=slug)
 
         return self
@@ -104,4 +133,15 @@ class DynamicContent(ContentBase[GridView], ABC):
         self.active = True
 
         while self.active:
-            yield from self.refresh_content()
+            frames = self.refresh_content()
+            try:
+                while self.active:
+                    try:
+                        frame = next(frames)
+                    except StopIteration:
+                        break
+
+                    if self.active:
+                        yield frame
+            finally:
+                frames.close()

@@ -1,0 +1,66 @@
+---
+name: Deploy MtrxPi Release
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag to redeploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mtrxpi-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to MtrxPi
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'release' && !github.event.release.prerelease)
+    environment: production-deploy
+    runs-on: [self-hosted, linux, x64, cc, iac, opentofu]
+    timeout-minutes: 15
+    steps:
+      - name: Validate published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable semantic release tag"
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            --jq 'select(.draft == false and .prerelease == false) | .tag_name' \
+            | grep -Fx "$TAG"
+
+      - name: Set up LAN SSH
+        id: ssh
+        # yamllint disable-line rule:line-length
+        uses: worganisation/github-config-files/actions/lan-ssh@0b7ce9549e48edc9a4057ef9bd46acea5d2a6850
+        with:
+          private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          known-hosts: ${{ vars.DEPLOY_SSH_KNOWN_HOSTS }}
+
+      - name: Deploy release tag
+        env:
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+          SSH_CONFIG: ${{ steps.ssh.outputs.config }}
+        run: |
+          set -euo pipefail
+          ssh -F "$SSH_CONFIG" pi@10.0.0.51 \
+            "bash -lc 'set -euo pipefail; \
+            export PATH=\"\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH\"; \
+            cd /home/pi/led-matrix-controller; \
+            git fetch --prune --tags origin; \
+            git show refs/tags/${TAG}:scripts/deploy-release.sh | bash -s -- ${TAG}'"
+          echo "Deployed ${TAG} to mtrxpi" >> "$GITHUB_STEP_SUMMARY"

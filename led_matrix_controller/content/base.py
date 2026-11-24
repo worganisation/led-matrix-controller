@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
 import math
 import re
 from abc import ABC, abstractmethod
@@ -16,7 +15,6 @@ from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
-    Callable,
     ClassVar,
     Generic,
     Literal,
@@ -24,7 +22,6 @@ from typing import (
 )
 
 import numpy as np
-from httpx import URL
 from numpy.typing import NDArray
 from typing_extensions import TypeVar
 from utils import const, mtrx
@@ -34,7 +31,7 @@ from wg_utilities.loggers import get_streaming_logger
 from .setting import TransitionableParameterSetting
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Generator, Iterator
+    from collections.abc import Callable, Collection, Generator, Iterator
 
     from PIL import Image
 
@@ -106,6 +103,9 @@ class StopType(Enum):
     e.g. Combination only has one content model, "transform" the current content into just that
     item
     """
+
+    COMBINED = auto()
+    """Content is continuing inside a queued combination."""
 
 
 ContentType = TypeVar("ContentType", GridView, mtrx.Canvas)
@@ -213,30 +213,37 @@ class ContentBase(ABC, Generic[ContentType]):
         """Convert the array to an image."""
 
     @final
-    def chain_generators(self) -> itertools.chain[None]:
-        """Chain the generators (setup, run, teardown) of the content."""
-        chain: list[Iterator[None]] = []
-
+    def chain_generators(self) -> Generator[None, None, None]:
+        """Run setup and playback, preserving state during priority interruptions."""
         if (setup := self.setup()) is not None:
-            chain.append(setup)
+            while self.active:
+                try:
+                    frame = next(setup)
+                except StopIteration:
+                    break
 
-        chain.append(iter(self))
+                if self.active:
+                    yield frame
 
-        if (teardown := self.teardown()) is not None:
-            chain.append(teardown)
+        if self.active:
+            yield from self
 
-        return itertools.chain(*chain)
+        if (
+            self.stop_reason not in {StopType.PRIORITY, StopType.COMBINED}
+            and (teardown := self.teardown()) is not None
+        ):
+            yield from teardown
 
     def setting_update_callback(self, update_setting: str | None = None) -> None:
         """Callback for when a setting is updated."""
         _ = self, update_setting
         raise NotImplementedError
 
-    def setup(self) -> Generator[None, None, None] | None:  # noqa: PLR6301
+    def setup(self) -> Generator[None, None, None] | None:  # ruff:ignore[no-self-use]
         """Perform any necessary setup."""
         return None
 
-    def teardown(self) -> Generator[None, None, None] | None:  # noqa: PLR6301
+    def teardown(self) -> Generator[None, None, None] | None:  # ruff:ignore[no-self-use]
         """Perform any necessary cleanup."""
         return None
 
@@ -258,27 +265,27 @@ class ContentBase(ABC, Generic[ContentType]):
 
     @property
     def id(self) -> str:
-        """Return the ID of the content."""
+        """ID of the content."""
         return self.id_override or camel_to_kebab_case(self.__class__.__name__)
 
     @cached_property
     def is_small(self) -> bool:
-        """Return whether the content is smaller than the matrix."""
+        """Whether the content is smaller than the matrix."""
         return self.shape < const.MATRIX_SHAPE
 
     @property
     def mqtt_attributes(self) -> str:
-        """Return extra attributes for the MQTT message."""
+        """Extra attributes for the MQTT message."""
         return dumps(self, default=self._json_encode)
 
     @property
     def position(self) -> tuple[int, int]:
-        """Return the position of the content."""
+        """Position of the content."""
         return self.x_pos, self.y_pos
 
     @property
     def shape(self) -> tuple[int, int]:
-        """Return the shape of the content."""
+        """Shape of the content."""
         return self.height, self.width
 
     @abstractmethod
@@ -287,12 +294,12 @@ class ContentBase(ABC, Generic[ContentType]):
 
     @final
     @staticmethod
-    def _json_encode(obj: Any) -> Any:  # noqa: PLR0911,C901
+    def _json_encode(obj: Any) -> Any:  # ruff:ignore[too-many-return-statements, complex-structure]
         if hasattr(obj, "__json__"):
             with suppress(TypeError):
                 return obj.__json__()
 
-        if isinstance(obj, PathLike | URL):
+        if isinstance(obj, PathLike):
             return str(obj)
 
         if isinstance(obj, re.Pattern):
@@ -324,7 +331,7 @@ class ContentBase(ABC, Generic[ContentType]):
             return dumps(obj)
         except TypeError:
             if not callable(obj):
-                LOGGER.error("Could not serialize object (%s): %r", obj, obj)  # noqa: TRY400
+                LOGGER.error("Could not serialize object (%s): %r", obj, obj)  # ruff:ignore[error-instead-of-exception]
                 if not const.IS_PI:
                     raise
             return None

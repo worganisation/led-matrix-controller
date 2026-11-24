@@ -1,24 +1,35 @@
 ---
 version: 2
 updates:
-  - package-ecosystem: pip
+  - package-ecosystem: uv
+    open-pull-requests-limit: 0
     directory: /
     schedule:
-      interval: daily
-    open-pull-requests-limit: 20
+      interval: monthly
+    groups:
+      uv-dependencies:
+        applies-to: version-updates
+        patterns:
+          - '*'
+      uv-security-dependencies:
+        applies-to: security-updates
+        patterns:
+          - '*'
     reviewers:
       - worgarside
 
   - package-ecosystem: github-actions
+    open-pull-requests-limit: 0
     directory: /
     schedule:
-      interval: daily
+      interval: monthly
     reviewers:
       - worgarside
 
   - package-ecosystem: npm
+    open-pull-requests-limit: 0
     directory: /
     schedule:
-      interval: daily
+      interval: monthly
     reviewers:
       - worgarside

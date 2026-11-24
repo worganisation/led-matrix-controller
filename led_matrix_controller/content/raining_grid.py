@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import unique
-from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, cast
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal
 
 import numpy as np
 from content.automaton import (
@@ -72,7 +72,7 @@ class RainingGrid(Automaton):
     IS_OPAQUE: ClassVar[bool] = True
     # i.e. has a full background to overwrite previous content
 
-    STATE = State
+    STATE: ClassVar[type[StateBase]] = State
 
     def stop_when_no_rain(self) -> None:
         """Stop the simulation when there is no rain."""
@@ -88,6 +88,7 @@ class RainingGrid(Automaton):
             fp_precision=4,
             # Anything above 0.1 is too much rain!
             payload_modifier=lambda x, _: x / 1000,
+            state_modifier=lambda x: x * 1000,
             icon="mdi:cloud-percent-outline",
             unit_of_measurement="%",
             value_callbacks={0: stop_when_no_rain},
@@ -136,6 +137,7 @@ class RainingGrid(Automaton):
             icon="mdi:flower",
             unit_of_measurement="%",
             payload_modifier=lambda x, _: x / 100,
+            state_modifier=lambda x: x * 100,
         ),
     ] = 0.01
 
@@ -155,10 +157,11 @@ class RainingGrid(Automaton):
             minimum=1,
             maximum=const.seconds_to_ticks(300),  # 5 minutes
             icon="mdi:flower",
-            unit_of_measurement="ticks",
+            unit_of_measurement="s",
             payload_modifier=const.seconds_to_ticks,
+            state_modifier=const.ticks_to_seconds,
         ),
-    ] = const.seconds_to_ticks(10)  # noqa: RUF009
+    ] = const.seconds_to_ticks(10)
 
     leaf_growth_chance: Annotated[
         float,
@@ -168,54 +171,31 @@ class RainingGrid(Automaton):
             icon="mdi:flower",
             unit_of_measurement="%",
             payload_modifier=lambda x, _: x / 100,
+            state_modifier=lambda x: x * 100,
             invoke_settings_callback=True,
         ),
     ] = 0.005
 
+    _clearing: bool = field(init=False, default=False, repr=False)
+
+    @property
+    def effective_rain_chance(self) -> float:
+        """Suppress new rain during clearing without overwriting configured settings."""
+        return 0 if self._clearing else self.rain_chance
+
     def teardown(self) -> Generator[None, None, None]:
-        """Transition the rain chance to 0 then run the simulation until the grid is clear."""
-        rain_chance_setting = cast(
-            "TransitionableParameterSetting[float]",
-            self.settings["rain_chance"],
-        )
+        """Clear the simulation until empty or interrupted by another content request."""
+        self._clearing = True
+        frames = iter(self)
 
-        total_change = original_rain_chance = rain_chance_setting.value
-        original_transition_rate = rain_chance_setting.transition_rate
-
-        ticks = 0.5 * const.TICKS_PER_SECOND
-
-        rain_chance_setting.transition_rate = max(
-            round(
-                total_change / ticks,
-                rain_chance_setting.fp_precision,
-            ),
-            0,
-        )
-
-        LOGGER.debug(
-            "Modified `rain_chance` transition rate from %f to %f",
-            original_transition_rate,
-            rain_chance_setting.transition_rate,
-        )
-
-        rain_chance_setting.value = 0
-
-        for _ in self:
-            yield
-
-            if np.all(self.pixels == 0):
-                break
-
-        rain_chance_setting.value = original_rain_chance
-        rain_chance_setting.transition_rate = original_transition_rate
-
-        LOGGER.debug(
-            "Reset `rain_chance` to %f and transition rate to %f",
-            original_rain_chance,
-            original_transition_rate,
-        )
-
-        self._stop_rules_thread()
+        try:
+            for _ in frames:
+                yield
+                if np.all(self.pixels == 0):
+                    break
+        finally:
+            frames.close()
+            self._clearing = False
 
     def __hash__(self) -> int:
         """Return the hash of the object."""
@@ -229,7 +209,7 @@ def generate_raindrops(ca: RainingGrid, target_slice: TargetSlice) -> MaskGen:
 
     def mask_gen(pixels: GridView) -> Mask:
         return (pixels[target_slice] == State.NULL.state) & (  # type: ignore[no-any-return]
-            const.RNG.random(shape) < ca.rain_chance
+            const.RNG.random(shape) < ca.effective_rain_chance
         )
 
     return mask_gen
@@ -452,7 +432,7 @@ def start_plant(ca: RainingGrid, target_slice: TargetSlice) -> MaskGen:
         if len(valid_indices := np.where(mask[0])[0]) == 0:
             return np.zeros_like(mask)
 
-        plant_indices = np.where(np.isin(target_pixels, plant_states))[0]
+        plant_indices = np.where(np.isin(target_pixels[0], plant_states))[0]
 
         if len(plant_indices) > 0:
             # Filter out valid indices that are within N cells of an existing plant
@@ -538,7 +518,7 @@ def plant_growth(ca: RainingGrid, target_slice: TargetSlice) -> MaskGen:
 
         left_mask = ((random_directions == 0) & eligible_mask)[:, 1:]
         right_mask = ((random_directions == 1) & eligible_mask)[:, :-1]
-        up_mask = ((random_directions == 2) & eligible_mask)[1:, :]  # noqa: PLR2004
+        up_mask = ((random_directions == 2) & eligible_mask)[1:, :]  # ruff:ignore[magic-value-comparison]
 
         change_mask = np.zeros_like(source_pixels, dtype=bool)
 
@@ -842,7 +822,7 @@ def leaf_growth_b(ca: RainingGrid, target_slice: TargetSlice) -> MaskGen:
 @RainingGrid.rule(
     State.DYING_PLANT,
     frequency=const.TICKS_PER_SECOND,
-    predicate=lambda ca: ca.rain_chance < 0.002,  # noqa: PLR2004
+    predicate=lambda ca: ca.effective_rain_chance < 0.002,  # ruff:ignore[magic-value-comparison]
     random_multiplier=0.25,
 )
 def kill_stagnant_plant(ca: RainingGrid, target_slice: TargetSlice) -> MaskGen:
@@ -996,7 +976,7 @@ def trim_plant_tops(ca: RainingGrid, target_slice: TargetSlice) -> MaskGen:
     State.DYING_PLANT,
     target_slice=(slice(None, 1)),
     frequency=const.seconds_to_ticks(60),
-    predicate=lambda ca: ca.rain_chance <= 0.0005,  # noqa: PLR2004  (0.5% rain intensity)
+    predicate=lambda ca: ca.effective_rain_chance <= 0.0005,  # ruff:ignore[magic-value-comparison]  (0.5% rain intensity)
     random_multiplier=0.2,
 )
 def kill_off_full_height_plants(_: RainingGrid, target_slice: TargetSlice) -> MaskGen:

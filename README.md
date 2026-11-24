@@ -4,6 +4,26 @@
 
 This service is intended to be run on a Raspberry Pi and receives messages from a MQTT broker to control an LED matrix. I currently control my matrix from [Home Assistant](https://github.com/worgarside/home-assistant).
 
+## Deployment
+
+Published stable releases deploy to `pi@10.0.0.51` from the shared CC runner through the [LAN deployment SSH action](https://github.com/worganisation/github-config-files/tree/0b7ce9549e48edc9a4057ef9bd46acea5d2a6850/actions/lan-ssh). The `production-deploy` environment requires the `DEPLOY_SSH_PRIVATE_KEY` secret and `DEPLOY_SSH_KNOWN_HOSTS` variable containing the independently verified host key for `10.0.0.51`. The matching public key must be authorized for `pi`, and the runner firewall must allow SSH to that address.
+
+The Pi checkout is `/home/pi/led-matrix-controller`, with its `.env` file, `uv`, GNU Make, a C++ compiler, Python 3.11 development headers, and Cython available. The deployment user needs non-interactive sudo access to install the systemd units, reload systemd, and restart the matrix and installed audio processor services.
+
+The workflow fetches and runs `scripts/deploy-release.sh` from the selected release tag, so the deployment entrypoint is available even when the Pi has an older checkout. The same operation is available locally as `make deploy TAG=<tag>`. This rejects dirty checkouts and tags outside `origin/main` or without the deployment entrypoint, checks out the release in detached HEAD, installs locked runtime dependencies and the pinned native matrix bindings, installs systemd units, and restarts the matrix plus the audio processor when its unit is installed. Untracked submodule build outputs are preserved and do not block deployment; tracked submodule changes still block it. Runtime dependency sync preserves the separately installed native bindings. Each restarted service must keep the same process alive for ten seconds.
+
+To redeploy a published stable release containing the deployment script, run **Actions → Deploy MtrxPi Release → Run workflow** from `main` and enter its tag. Deployments to mtrxpi are serialized, and prereleases are excluded. A failed installation or health check fails the deployment; inspect the job output and service journal before retrying.
+
+## Development
+
+Use Python 3.11 and install the locked dependencies with `uv sync --locked`. PyAudio needs PortAudio development headers (`portaudio19-dev` on Debian). The Python and NumPy versions match the Pi deployment; dependency upgrades must retain compatibility with its native matrix bindings.
+
+`make run` starts the controller on the Pi. `make vscode-shortcut-1` starts the controller with the desktop matrix emulator; both use `led_matrix_controller/main.py`. The `rain` target is an alias for `run`, and content selection comes from MQTT.
+
+Unit tests and CodSpeed benchmarks have separate repository-owned workflows. Both install native dependencies in a Python 3.11 container. Unit tests exclude benchmarks; CodSpeed runs only `tests/benchmark`, without coverage or parallel test workers.
+
+Home Assistant discovers the controller’s numeric, enum, boolean and text content settings through retained MQTT configurations under `homeassistant/`. The controller publishes these on broker connection and reconnection, and when Home Assistant announces `online` on `homeassistant/status`. Settings share the MtrxPi device and use stable `mtrxpi_<content>_<setting>` unique IDs and default entity IDs. Retained commands use the setting topics, while actual values are published separately under each topic’s `/state` suffix in the control’s units. Discovery publishes current state alongside configuration, and accepted commands, completed transitions and programmatic changes refresh it without feeding state back into command processing. Connecting preserves saved commands. Home Assistant’s MQTT integration must have discovery enabled with its default prefix and birth topic.
+
 ## Content
 
 All content has the following parameters:
