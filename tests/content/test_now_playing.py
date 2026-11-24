@@ -95,3 +95,26 @@ def test_cached_artwork_is_loaded_without_http(artwork: NowPlaying) -> None:
         np.testing.assert_array_equal(loaded, pixels)
         assert artwork.get_content() is loaded
         loader.assert_not_called()
+
+
+def test_resize_cached_artwork(artwork: NowPlaying) -> None:
+    """Resize the current track and keep it within the display bounds.
+
+    Args:
+        artwork: Player with an isolated artwork cache.
+    """
+    assert artwork.file_path is not None
+    source = np.full((64, 64, 4), 255, dtype=np.int_)
+    artwork._current_image = ((artwork.file_path, artwork.artwork_uri or ""), source)
+    artwork.size = 16
+
+    frame = artwork.get_content()
+    assert frame.shape == (16, 16, 4)
+    assert np.all(frame == 255)
+    assert artwork.get_content() is frame
+
+    artwork.x_pos = artwork.y_pos = 48
+    artwork.size = 64
+    assert artwork.get_content() is source
+    artwork.x_pos = artwork.y_pos = 1
+    assert artwork.position == (0, 0)

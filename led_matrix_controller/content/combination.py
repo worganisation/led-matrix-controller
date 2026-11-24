@@ -113,26 +113,32 @@ class Combination(DynamicContent):
                         del content_chains[content.id]
                         break
 
-                    new_pixels = content.get_content()
-
-                    if not self.multiple_opaque and content.IS_OPAQUE:
-                        # i.e. don't apply a mask
-                        self.pixels[
-                            content.y_pos : content.y_pos + content.height,
-                            content.x_pos : content.x_pos + content.width,
-                        ] = new_pixels
-                    else:
-                        mask = np.any(new_pixels != (0, 0, 0, 0), axis=-1)
-
-                        self.pixels[
-                            content.y_pos : content.y_pos + content.height,
-                            content.x_pos : content.x_pos + content.width,
-                        ][mask] = new_pixels[mask]
+                    self._composite(content)
 
                 yield
         finally:
             for chain in content_chains.values():
                 chain.close()
+
+    def _composite(self, content: DynamicContent) -> None:
+        """Draw a child frame at its current position.
+
+        Args:
+            content: Child supplying the next frame.
+        """
+        pixels = content.get_content()
+        x, y = content.position
+        height, width = pixels.shape[:2]
+        destination = self.pixels[y : y + height, x : x + width]
+        if not self.multiple_opaque and content.IS_OPAQUE:
+            if pixels.shape != self.pixels.shape:
+                self.pixels.fill(0)
+
+            destination[:] = pixels
+            return
+
+        mask = np.any(pixels != (0, 0, 0, 0), axis=-1)
+        destination[mask] = pixels[mask]
 
     def setting_update_callback(self, update_setting: str | None = None) -> None:
         """Change the opaque flag if necessary."""

@@ -19,11 +19,12 @@ import aiohttp
 import numpy as np
 from content.base import GridView, StopType
 from PIL import Image
+from utils import const
 from utils.config import SETTINGS
 from wg_utilities.loggers import get_streaming_logger
 
 from .dynamic_content import DynamicContent
-from .setting import ParameterSetting
+from .setting import ParameterSetting, TransitionableParameterSetting
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -64,6 +65,25 @@ class NowPlaying(DynamicContent):
         default_factory=_INITIAL_TRACK_META.copy,
     )
 
+    size: Annotated[
+        int,
+        TransitionableParameterSetting(
+            transition_rate=0.1,
+            minimum=4,
+            maximum=64,
+            strict=True,
+            icon="mdi:resize",
+            unit_of_measurement="px",
+            display_mode="slider",
+        ),
+    ] = const.MATRIX_WIDTH
+
+    _scaled_image: tuple[GridView, GridView] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
     _current_image: tuple[tuple[Path, str], GridView] | None = field(
         default=None,
         init=False,
@@ -84,13 +104,34 @@ class NowPlaying(DynamicContent):
     )
 
     def get_content(self) -> GridView:
-        """Return cached pixels immediately while a worker loads missing artwork."""
+        """Render cached artwork at the selected size while new artwork loads.
+
+        Returns:
+            An RGBA frame matching the current render dimensions.
+        """
+        size = self.size
+        if self.width != size or self.height != size:
+            self.width = self.height = size
+            self.pixels = self.zeros()
+
         if not (path := self.file_path) or not (url := self.artwork_uri):
             return self.pixels
 
         key = (path, url)
         if self._current_image is not None and self._current_image[0] == key:
-            return self._current_image[1]
+            source = self._current_image[1]
+            if source.shape[:2] == (size, size):
+                return source
+
+            if (
+                self._scaled_image is None
+                or self._scaled_image[0] is not source
+                or self._scaled_image[1].shape[:2] != (size, size)
+            ):
+                image = Image.fromarray(source.astype(np.uint8, copy=False))
+                self._scaled_image = (source, np.array(image.resize((size, size))))
+
+            return self._scaled_image[1]
 
         if (self._download_thread is None or not self._download_thread.is_alive()) and (
             self._retry_after is None
@@ -124,8 +165,17 @@ class NowPlaying(DynamicContent):
         else:
             self._current_image = (key, pixels)
 
-    async def _download(self, url: str) -> GridView:
-        """Download and decode artwork with a bounded total request time."""
+    @staticmethod
+    async def _download(url: str) -> GridView:
+        """Download full-panel artwork for reuse across display sizes.
+
+        Args:
+            url: Source artwork URL.
+
+        Returns:
+            Full-panel RGBA pixels.
+
+        """
         async with (
             aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
             session.get(url) as response,
@@ -134,7 +184,9 @@ class NowPlaying(DynamicContent):
             artwork_bytes = await response.read()
 
         with Image.open(BytesIO(artwork_bytes)) as image:
-            return np.array(image.resize((self.width, self.height)).convert("RGBA"))
+            return np.array(
+                image.resize((const.MATRIX_WIDTH, const.MATRIX_HEIGHT)).convert("RGBA"),
+            )
 
     def refresh_content(self) -> Generator[None, None, None]:
         """Refresh the content."""
