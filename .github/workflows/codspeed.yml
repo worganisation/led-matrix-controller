@@ -33,7 +33,7 @@ jobs:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     timeout-minutes: 20
     container:
-      image: python:3.11-slim-bookworm
+      image: python:3.15-slim-bookworm
       # CodSpeed uses setarch to disable ASLR for its Valgrind simulation.
       options: --security-opt seccomp=unconfined
     env:
