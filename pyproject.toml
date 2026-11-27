@@ -5,7 +5,7 @@ description = "Updates an RGB LED matrix with payloads from an MQTT topic"
 authors = [{ name = "Will Garside", email = "worgarside@gmail.com" }]
 license = "MIT"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.15,<3.16"
 dependencies = [
   "aiohttp>=3.12,<4.0",
   "numpy==2.0.1",
