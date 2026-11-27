@@ -26,7 +26,7 @@ Home Assistant discovers the controller’s numeric, enum, boolean and text cont
 
 ## Frame tracing
 
-Set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://10.0.0.110:4318/v1/traces` in the controller service's `.env` to export traces to Alloy. Apply the [observability guest firewall configuration](https://github.com/worganisation/infrastructure/blob/main/docs/observability.md#display-traces) before enabling export on mtrxpi. Leaving the variable unset disables tracing. The audio processor shares the settings file; only the display controller starts an exporter.
+The deployed display controller sends sampled frame traces to Alloy at `http://10.0.0.110:4318/v1/traces`. The release installer loads this default from `led_matrix_controller.service`. The controller’s `.env` can override `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` with a different receiver URL. To disable export on this Pi, remove the endpoint from `.env` and set `UnsetEnvironment=OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` in a `[Service]` drop-in. Direct development runs require an explicit endpoint to enable export. [Private collector and routing](https://github.com/worganisation/infrastructure/blob/main/docs/observability.md#local-application-traces)
 
 In Grafana Explore, select **Application traces** and run `{ resource.service.name = "led-matrix-controller" && name = "matrix.frame" }`. The controller samples the first active frame and at most one active frame every 30 seconds thereafter. It also records each attempt to blank the panel. An idle display can go hours without a frame. The existing MQTT render-progress heartbeat continues during rendering.
 
